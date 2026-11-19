@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://pms-backend-nu.vercel.app/api/:path*" },
+    { "source": "/api/:path*", "destination": "https://pms-backend-lake.vercel.app/api/:path*" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }
   ]
 }
