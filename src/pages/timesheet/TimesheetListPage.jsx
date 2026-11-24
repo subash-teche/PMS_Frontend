@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarCheck, Check, ChartPie, Clock3, Download, ExternalLink, FolderKanban, Lock, Pencil, Plus, Search, Trash2, UserRound, Users } from 'lucide-react';
+import { CalendarCheck, Check, ChartPie, Clock3, Download, ExternalLink, FolderKanban, KanbanSquare, Lock, Pencil, Plus, Search, Trash2, UserRound, Users } from 'lucide-react';
 import { taskAccessApi, timesheetsApi } from '@/api/endpoints';
 import { errorMessage } from '@/api/client';
 import { useAuth, usePermissions } from '@/auth/auth-context';
@@ -71,7 +71,7 @@ function Summary({ s, actions }) {
 
 export default function TimesheetListPage() {
   const perms = usePermissions(SCREENS.TIMESHEET);
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -81,6 +81,8 @@ export default function TimesheetListPage() {
   const [filters, setFilters] = useSessionState('timesheet.filters', EMPTY_FILTERS);
   const [page, setPage] = useSessionState('timesheet.page', 1);
   const [pageSize, setPageSize] = useSessionState('timesheet.pageSize', 10);
+  // one row per task with the time collected on it in the chosen period (default), or every entry
+  const [byTask, setByTask] = useSessionState('timesheet.byTask', true);
   const [toDelete, setToDelete] = useState(null);
   const debouncedSearch = useDebounce(search);
 
@@ -89,8 +91,8 @@ export default function TimesheetListPage() {
   const filterProjects = useQuery({ queryKey: ['timesheets', 'filter-projects'], queryFn: timesheetsApi.projects });
   const projectOptions = (filterProjects.data ?? []).map((p) => ({ value: p.id, label: p.title }));
   // task categories (Project, Personal, Activity …)
-  const meta = useQuery({ queryKey: ['timesheets', 'meta'], queryFn: timesheetsApi.meta, staleTime: 5 * 60 * 1000 });
-  const categoryOptions = (meta.data?.categories ?? []).map((c) => ({ value: c.id, label: c.name }));
+  const categories = useQuery({ queryKey: ['timesheets', 'categories'], queryFn: timesheetsApi.categories, staleTime: 5 * 60 * 1000 });
+  const categoryOptions = (categories.data ?? []).map((c) => ({ value: c.id, label: c.name }));
   const categoryIds = filters.categoryId ?? []; // filters saved before the category filter have none
   // Employee filter: people whose time I can see (role scope, my projects, Task Master)
   const people = useQuery({ queryKey: ['task-access', 'visible-users'], queryFn: taskAccessApi.visibleUsers, staleTime: 5 * 60 * 1000 });
@@ -108,6 +110,7 @@ export default function TimesheetListPage() {
     isBillable: filters.isBillable ?? undefined,
     from: range?.from,
     to: range?.to,
+    groupBy: byTask ? 'task' : undefined,
     page,
     pageSize,
   };
@@ -155,9 +158,12 @@ export default function TimesheetListPage() {
     <RowMenu
       items={[
         { label: 'Open project', icon: ExternalLink, onClick: () => navigate(`/projects/${t.projectId}`) },
-        { label: 'Edit', icon: Pencil, hidden: t.userId !== user.id || !perms.edit, onClick: () => navigate(`/timesheet/${t.id}/edit`) },
-        { divider: true, hidden: t.userId !== user.id || !perms.delete },
-        { label: 'Delete', icon: Trash2, danger: true, hidden: t.userId !== user.id || !perms.delete, onClick: () => setToDelete(t) },
+        { label: 'Open on the Tasks board', icon: KanbanSquare, hidden: t.source !== 'flow' || !session?.apps?.includes('tm'), onClick: () => navigate('/tasks/stages') },
+        // time logged in Task Management is changed there, so it is read-only here
+        // a grouped row stands for several entries: to change one, switch to "Entries"
+        { label: 'Edit', icon: Pencil, hidden: byTask || t.source === 'flow' || t.userId !== user.id || !perms.edit, onClick: () => navigate(`/timesheet/${t.id}/edit`) },
+        { divider: true, hidden: byTask || t.source === 'flow' || t.userId !== user.id || !perms.delete },
+        { label: 'Delete', icon: Trash2, danger: true, hidden: byTask || t.source === 'flow' || t.userId !== user.id || !perms.delete, onClick: () => setToDelete(t) },
       ]}
     />
   );
@@ -170,11 +176,20 @@ export default function TimesheetListPage() {
         key: 'date',
         label: 'Date',
         locked: true,
-        td: (t) => (
-          <td key="date" className="nowrap">
-            <b>{formatDate(t.workDate)}</b>
-          </td>
-        ),
+        td: (t) =>
+          byTask && t.entries != null ? (
+            // grouped: the day of the last entry, or the span of days the time was logged on, and how many entries were added up
+            <td key="date" className="nowrap">
+              <b>{t.firstDate && t.firstDate !== t.lastDate ? `${formatDate(t.firstDate)} – ${formatDate(t.lastDate)}` : formatDate(t.workDate)}</b>
+              <div className="cell-sub">
+                {t.entries} entr{t.entries === 1 ? 'y' : 'ies'}
+              </div>
+            </td>
+          ) : (
+            <td key="date" className="nowrap">
+              <b>{formatDate(t.workDate)}</b>
+            </td>
+          ),
       },
       {
         key: 'user',
@@ -228,6 +243,11 @@ export default function TimesheetListPage() {
             <div className={`pl-comment-text${t.isMasked ? ' is-private' : ''}`} style={{ fontWeight: 500 }} title={t.isMasked ? 'Personal – the details are private' : (t.comment ?? '')}>
               {t.isMasked && <Lock className="private-ico" />}
               {t.comment || <span className="muted">—</span>}
+              {t.source === 'flow' && (
+                <span className="fl-source" title="Logged on the Tasks board - change it there">
+                  <KanbanSquare /> Tasks board
+                </span>
+              )}
             </div>
           </td>
         ),
@@ -311,6 +331,14 @@ export default function TimesheetListPage() {
             onChange={(v) => setFilter('isBillable', v === null ? null : v === 'yes')}
           />
           <Dropdown pill clearable placeholder="Date" options={RANGES} value={filters.dateRange} onChange={(v) => setFilter('dateRange', v)} />
+          <div className="segmented seg-sm" role="group" aria-label="Show the time">
+            <button type="button" className={byTask ? 'is-active' : ''} onClick={() => { setByTask(true); setPage(1); }}>
+              By task
+            </button>
+            <button type="button" className={!byTask ? 'is-active' : ''} onClick={() => { setByTask(false); setPage(1); }}>
+              Entries
+            </button>
+          </div>
           <span className="spacer" />
           <ColumnPicker cols={cols} />
         </div>
@@ -352,7 +380,7 @@ export default function TimesheetListPage() {
                         </td>
                       ) : i === 0 ? (
                         <td key={c.key}>
-                          <b>Total</b> <span className="muted small">({total} entr{total === 1 ? 'y' : 'ies'})</span>
+                          <b>Total</b> <span className="muted small">({total} {byTask ? `task${total === 1 ? '' : 's'}` : `entr${total === 1 ? 'y' : 'ies'}`})</span>
                         </td>
                       ) : (
                         <td key={c.key} />

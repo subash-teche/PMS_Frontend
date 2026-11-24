@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
-import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, Navigate, useLocation, useNavigate, useParams } from "react-router";
@@ -7,11 +7,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   Cloud,
-  Infinity as InfinityIcon,
   Plus,
   Trash2,
 } from "lucide-react";
-import { mastersApi, tasksApi } from "@/api/endpoints";
+import { flowApi, mastersApi, task135Api, tasksApi } from "@/api/endpoints";
+import { slotOf } from "@/tmx/shared/plan";
+import { FlowPeople } from "./FlowPeople";
 import { errorMessage } from "@/api/client";
 import { useAuth, usePermissions } from "@/auth/auth-context";
 import { Topbar } from "@/components/layout/Topbar";
@@ -19,14 +20,12 @@ import { DatePicker } from "@/components/ui/DatePicker";
 import { TimePicker } from "@/components/ui/TimePicker";
 import { ErrorAlert } from "@/components/ui/Display";
 import { Dropdown } from "@/components/ui/Dropdown";
-import { Checkbox, ChoiceGroup, Field, Switch } from "@/components/ui/Field";
+import { Checkbox, ChoiceGroup, Field } from "@/components/ui/Field";
 import { FullPageLoader } from "@/components/ui/Loader";
-import { useConfirm } from "@/components/ui/confirm-context";
 import { useToast } from "@/components/ui/toast-context";
 import { useApiFormError } from "@/hooks/useApiForm";
 import {
   SCREENS,
-  TASK_PRIORITY_OPTIONS,
   TASK_STATUS_OPTIONS,
 } from "@/lib/constants";
 import { blockNonNumericKeys } from "@/lib/percent";
@@ -64,45 +63,27 @@ const schema = z
     assignedTo: z.number({ error: "Select who does the task" }),
     estHours: whole(9999, "Whole hours"),
     estMinutes: whole(99999, "Whole minutes"), // 60+ is carried into hours on blur
-    priority: z.string(),
     status: z.string(),
-    isContinuous: z.boolean(),
     startDate: z.string(),
     startTime: z.string(),
     endDate: z.string(),
     endTime: z.string(),
     completedOn: z.string(),
-    subtasks: z.array(
-      z.object({
-        id: z.number().optional(),
-        title: z.string().trim().min(1, "Enter the subtask").max(300),
-        dueDate: z.string(),
-        isDone: z.boolean(),
-      }),
-    ),
     needsProject: z.boolean(),
   })
   .superRefine((v, ctx) => {
     const add = (path, message) =>
       ctx.addIssue({ code: "custom", path: [path], message });
     if (v.needsProject && !v.projectId) add("projectId", "Select the project");
-    if (!v.isContinuous) {
-      if (!v.startDate) add("startDate", "Select the earliest start");
-      if (!v.endDate) add("endDate", "Select the end before date");
-      if (
-        v.startDate &&
-        v.endDate &&
-        joinDateTime(v.endDate, v.endTime) <=
-          joinDateTime(v.startDate, v.startTime)
-      )
-        add("endDate", "Must be after the earliest start");
-      // a subtask is due on or before the day the task ends
-      if (v.endDate)
-        v.subtasks.forEach((s, i) => {
-          if (s.dueDate && s.dueDate > v.endDate)
-            ctx.addIssue({ code: "custom", path: ["subtasks", i, "dueDate"], message: "After the task's end date" });
-        });
-    }
+    if (!v.startDate) add("startDate", "Select the earliest start");
+    if (!v.endDate) add("endDate", "Select the end before date");
+    if (
+      v.startDate &&
+      v.endDate &&
+      joinDateTime(v.endDate, v.endTime) <=
+        joinDateTime(v.startDate, v.startTime)
+    )
+      add("endDate", "Must be after the earliest start");
   });
 
 export default function TaskFormPage() {
@@ -111,11 +92,10 @@ export default function TaskFormPage() {
   const perms = usePermissions(SCREENS.TASKS);
   const navigate = useNavigate();
   // opened from the task details (which may itself come from a project): return there, keeping its own "back"
-  const { from, viewFrom } = useLocation().state ?? {};
+  const { from, viewFrom, category: wantedCategory, planDay } = useLocation().state ?? {}; // planDay: opened from a day of the 1-3-5 - the new task goes on that day // category: chosen on the Tasks page (Personal / Activity)
   const backTo = from ?? "/tasks";
   const backState = viewFrom ? { from: viewFrom } : undefined;
   const toast = useToast();
-  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
@@ -144,15 +124,12 @@ export default function TaskFormPage() {
       assignedTo: user.id,
       estHours: "",
       estMinutes: "",
-      priority: "medium",
       status: "to_do",
-      isContinuous: false,
       startDate: todayIso(),
       startTime: "09:00",
       endDate: plusDays(todayIso(), DEFAULT_SPAN_DAYS),
       endTime: "18:00",
       completedOn: "",
-      subtasks: [],
       needsProject: false,
     }),
     [user.id],
@@ -169,11 +146,10 @@ export default function TaskFormPage() {
     formState: { errors, isSubmitting },
   } = useForm({ resolver: zodResolver(schema), defaultValues: EMPTY });
   const { formError, handleApiError } = useApiFormError(setError);
-  const subtasks = useFieldArray({ control, name: "subtasks", keyName: "key" });
   const addAnother = useRef(false);
-  const [categoryId, isContinuous, status, taskGroupId, projectId, needsProject, endDate] = useWatch({
+  const [categoryId, status, taskGroupId, projectId, needsProject] = useWatch({
     control,
-    name: ["categoryId", "isContinuous", "status", "taskGroupId", "projectId", "needsProject", "endDate"],
+    name: ["categoryId", "status", "taskGroupId", "projectId", "needsProject"],
   });
   // task group → its task types
   const groups = useQuery({
@@ -192,6 +168,13 @@ export default function TaskFormPage() {
     [options.data],
   );
   const category = categories.find((c) => c.id === categoryId);
+  // A new project task is a flow task (it goes to the Tasks board): one person, or several people in order.
+  const flowCreate = !isEdit && Boolean(category?.isProject);
+  const [isFlow, setIsFlow] = useState(true);
+  const [flowIds, setFlowIds] = useState([user.id]);
+  const flowOptions = useQuery({ queryKey: ["flow", "options"], queryFn: flowApi.options, enabled: flowCreate, staleTime: 60_000 }).data;
+  const flowProject = (flowOptions?.projects ?? []).find((p) => p.id === projectId);
+  const flowPeopleIds = flowProject ? [flowProject.ownerId, ...flowProject.memberIds] : undefined;
   const canAssign = options.data?.canAssignOthers ?? false;
   // Personal / Activity: the owner's own task (you, on a new one), done by them; ongoing or with dates, as chosen
   const ownTask = Boolean(category && !category.isProject);
@@ -207,14 +190,15 @@ export default function TaskFormPage() {
   // default category: the first one; Project when it is first
   useEffect(() => {
     if (!isEdit && categories.length && getValues("categoryId") === undefined) {
-      setValue("categoryId", categories[0].id);
-      setValue("needsProject", categories[0].isProject);
-      if (!categories[0].isProject) {
+      const first = categories.find((c) => c.name.toLowerCase() === String(wantedCategory ?? "").toLowerCase()) ?? categories[0];
+      setValue("categoryId", first.id);
+      setValue("needsProject", first.isProject);
+      if (!first.isProject) {
         makeOwn();
         setDefaultEnd(true);
       }
     }
-  }, [categories, isEdit, getValues, setValue, makeOwn, setDefaultEnd]);
+  }, [categories, isEdit, wantedCategory, getValues, setValue, makeOwn, setDefaultEnd]);
 
   useEffect(() => {
     const t = task.data;
@@ -234,30 +218,40 @@ export default function TaskFormPage() {
         ? String(Math.floor(t.estimatedMinutes / 60))
         : "",
       estMinutes: t.estimatedMinutes ? String(t.estimatedMinutes % 60) : "",
-      priority: t.priority ?? "medium",
       status: t.status,
-      isContinuous: t.isContinuous,
       startDate: s.date,
       startTime: s.time || "09:00",
       endDate: e.date,
       endTime: e.time || "18:00",
       completedOn: t.completedOn ?? "",
-      subtasks: t.subtasks.map((x) => ({
-        id: x.id,
-        title: x.title,
-        dueDate: x.dueDate ?? "",
-        isDone: x.isDone,
-      })),
       needsProject: t.isProjectCategory,
     });
   }, [task.data, reset, user.id]);
 
   const save = useMutation({
-    mutationFn: (body) =>
-      isEdit ? tasksApi.update(id, body) : tasksApi.create(body),
-    onSuccess: (saved, body) => {
+    mutationFn: (body) => {
+      if (body.flowBody) return flowApi.create(body.flowBody);
+      return isEdit ? tasksApi.update(id, body) : tasksApi.create(body);
+    },
+    onSuccess: async (saved, body) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      toast.success(isEdit ? "Task updated" : `Task "${saved.name}" created`);
+      toast.success(isEdit ? "Task updated" : `Task "${saved.name ?? saved.title}" created`);
+      // created from a day of the 1-3-5: it is planned on that day (when it is for me)
+      if (!isEdit && planDay) {
+        try {
+          if (body.flowBody) {
+            const mine = (saved.steps ?? []).find((s) => s.userId === user.id && s.status !== "done");
+            if (mine) await flowApi.setPlan({ stepId: mine.id, slot: { ...slotOf(planDay), day: Number(planDay.slice(8)) } });
+          } else if (saved.assignedTo === user.id) {
+            await task135Api.add({ taskId: saved.id, date: planDay });
+          }
+          queryClient.invalidateQueries({ queryKey: ["day"] });
+          queryClient.invalidateQueries({ queryKey: ["plan"] });
+        } catch (e) {
+          toast.error("The task was created, but it could not be added to that day: " + (e?.response?.data?.message ?? e.message));
+        }
+      }
+      if (body.flowBody) queryClient.invalidateQueries({ queryKey: ["flow"] });
       if (addAnother.current) {
         // next task: same category / project / people, the rest cleared
         reset({
@@ -338,8 +332,30 @@ export default function TaskFormPage() {
 
   const onSubmit = (v) => {
     const minutes = Number(v.estHours || 0) * 60 + Number(v.estMinutes || 0);
+    let flowBody;
+    if (flowCreate) {
+      const fail = (field, message) => { setError(field, { message }); return true; };
+      if (!v.projectId) return fail("projectId", "Select the project");
+      if (!v.taskGroupId) return fail("taskGroupId", "Select the task group");
+      if (!v.taskTypeId) return fail("taskTypeId", "Select the task type");
+      if (isFlow && !flowIds.length) return setError("ownerId", { message: "Add at least one person to the flow" });
+      flowBody = {
+        title: v.name.trim(),
+        dueDate: v.endDate || null,
+        media: "",
+        description: v.description.trim(),
+        notes: "",
+        projectId: v.projectId,
+        taskGroupId: v.taskGroupId,
+        taskTypeId: v.taskTypeId,
+        // one person: the owner is left out, so the server makes the creator the owner
+        flow: isFlow ? flowIds : [v.assignedTo],
+        ...(isFlow && canAssign && v.ownerId ? { ownerIds: [v.ownerId] } : {}),
+      };
+    }
     return save
       .mutateAsync({
+        ...(flowBody ? { flowBody } : {}),
         name: v.name.trim(),
         description: v.description.trim() || null,
         categoryId: v.categoryId,
@@ -349,43 +365,17 @@ export default function TaskFormPage() {
         ownerId: v.ownerId,
         assignedTo: v.assignedTo,
         estimatedMinutes: minutes || null,
-        priority: v.priority,
         status: v.status,
-        isContinuous: v.isContinuous,
-        plannedStart: v.isContinuous
-          ? null
-          : joinDateTime(v.startDate, v.startTime),
-        plannedEnd: v.isContinuous ? null : joinDateTime(v.endDate, v.endTime),
+        plannedStart: joinDateTime(v.startDate, v.startTime),
+        plannedEnd: joinDateTime(v.endDate, v.endTime),
         completedOn:
           v.status === "completed" ? v.completedOn || todayIso() : null,
-        subtasks: v.subtasks.map((s) => ({
-          ...(s.id ? { id: s.id } : {}),
-          title: s.title.trim(),
-          dueDate: s.dueDate || null,
-          isDone: s.isDone,
-        })),
       })
       .catch(() => {});
   };
 
-  const removeSubtask = async (i) => {
-    const title = getValues(`subtasks.${i}.title`)?.trim();
-    if (
-      title &&
-      !(await confirm({
-        title: "Remove subtask?",
-        message: `"${title}" is removed when you save the task.`,
-        confirmLabel: "Remove",
-      }))
-    )
-      return;
-    subtasks.remove(i);
-  };
-
-  const subErr = (i, k) => errors.subtasks?.[i]?.[k]?.message;
-
-  // only the owner / creator (and All-scope roles) edit the whole task; the assignee and
-  // subtask people work from the details page
+  // only the owner / creator (and All-scope roles) edit the whole task; the assignee
+  // works from the details page
   if (isEdit && task.data && !(perms.edit && task.data.canManage))
     return <Navigate to={`/tasks/${id}`} replace />;
 
@@ -393,7 +383,7 @@ export default function TaskFormPage() {
     <>
       <Topbar
         title={isEdit ? "Edit task" : "New task"}
-        breadcrumb={["Task", "Task"]}
+        breadcrumb={["Tasks", "Task"]}
         back={backTo}
         backState={backState}
       />
@@ -405,20 +395,16 @@ export default function TaskFormPage() {
         <div className="form-main">
           <ErrorAlert>{formError}</ErrorAlert>
 
-          <section className="card card-lg form-card">
+          <div className="tf-cols">
+          <section className="card card-lg form-card tf-card">
             <div className="fc-head">
               <span className="fc-num">1</span>
               <div>
-                <div className="form-section-title">Task</div>
-                <div className="form-section-sub">
-                  What needs to be done. Project tasks are added to one of your
-                  projects.
-                </div>
+                <div className="form-section-title">Task details</div>
               </div>
             </div>
-            <div className="form-grid">
-              {/* row 1: title, category, project (category stays put; the project slot is empty for other categories) – row 2: description */}
-              <Field label="Title" required span={2} error={err("name")}>
+            <div className="tf-grid">
+              <Field label="Title" required className="tf-12" error={err("name")}>
                 <input
                   className="input"
                   maxLength={300}
@@ -426,37 +412,44 @@ export default function TaskFormPage() {
                   {...register("name")}
                 />
               </Field>
-              <Field label="Category" required error={err("categoryId")}>
+              <Field label="Category" required className="tf-12" error={err("categoryId")}>
                 <Controller
                   name="categoryId"
                   control={control}
                   render={({ field }) => (
-                    <Dropdown
-                      placeholder="Select category"
-                      options={opt(categories)}
-                      value={field.value}
-                      onChange={(v) => {
-                        field.onChange(v);
-                        const c = categories.find((x) => x.id === v);
-                        setValue("needsProject", !!c?.isProject);
-                        // a group the new category does not use no longer fits
-                        if (c?.taskGroupIds?.length && !c.taskGroupIds.includes(getValues("taskGroupId"))) {
-                          setValue("taskGroupId", null);
-                          setValue("taskTypeId", null);
-                        }
-                        if (!c?.isProject) {
-                          setValue("projectId", null);
-                          makeOwn();
-                        }
-                        // a new task: the default end follows the category (one day for Personal / Activity)
-                        if (!isEdit) setDefaultEnd(!c?.isProject);
-                      }}
-                    />
+                    <div className="tf-chips" role="radiogroup" aria-label="Category">
+                      {categories.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={field.value === c.id}
+                          className={field.value === c.id ? "tf-chip on" : "tf-chip"}
+                          onClick={() => {
+                            field.onChange(c.id);
+                            setValue("needsProject", !!c.isProject);
+                            // a group the new category does not use no longer fits
+                            if (c.taskGroupIds?.length && !c.taskGroupIds.includes(getValues("taskGroupId"))) {
+                              setValue("taskGroupId", null);
+                              setValue("taskTypeId", null);
+                            }
+                            if (!c.isProject) {
+                              setValue("projectId", null);
+                              makeOwn();
+                            }
+                            // a new task: the default end follows the category (one day for Personal / Activity)
+                            if (!isEdit) setDefaultEnd(!c.isProject);
+                          }}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 />
               </Field>
               {category?.isProject && (
-                <Field label="Project" required error={err("projectId")}>
+                <Field label="Project" required className="tf-12" error={err("projectId")}>
                   <Controller
                     name="projectId"
                     control={control}
@@ -485,18 +478,7 @@ export default function TaskFormPage() {
                   />
                 </Field>
               )}
-              {/* row 2: description on the left, task group / type on the right */}
-              <Field label="Description" span={2} error={err("description")}>
-                <textarea
-                  className="textarea"
-                  rows={3}
-                  style={{ minHeight: 90 }}
-                  maxLength={5000}
-                  placeholder="Details, links, notes…"
-                  {...register("description")}
-                />
-              </Field>
-              <Field label="Task group" error={err("taskGroupId")}>
+              <Field label="Task group" className="tf-6" error={err("taskGroupId")}>
                 <Controller
                   name="taskGroupId"
                   control={control}
@@ -524,7 +506,7 @@ export default function TaskFormPage() {
                   )}
                 />
               </Field>
-              <Field label="Task type" error={err("taskTypeId")}>
+              <Field label="Task type" className="tf-6" error={err("taskTypeId")}>
                 <Controller
                   name="taskTypeId"
                   control={control}
@@ -552,26 +534,44 @@ export default function TaskFormPage() {
                   }}
                 />
               </Field>
+              <Field label="Description" className="tf-12" error={err("description")}>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  style={{ minHeight: 90 }}
+                  maxLength={5000}
+                  placeholder="Details, links, notes…"
+                  {...register("description")}
+                />
+              </Field>
             </div>
           </section>
 
-          <section className="card card-lg form-card">
+
+          <div className="tf-side">
+          <section className="card card-lg form-card tf-card">
             <div className="fc-head">
               <span className="fc-num">2</span>
               <div>
-                <div className="form-section-title">People &amp; plan</div>
-                <div className="form-section-sub">
-                  {canAssign
-                    ? "Who owns the task, who does it, and when."
-                    : isEdit && task.data && task.data.ownerId !== user.id
-                      ? `${task.data.ownerName} owns this task – only they can change the people.`
-                      : "Your own task – you are the owner and the assignee."}{" "}
-                  A continuous task has no start or end date.
-                </div>
+                <div className="form-section-title">People</div>
+                {isEdit && task.data && task.data.ownerId !== user.id && (
+                  <div className="form-section-sub">{task.data.ownerName} owns this task – only they can change the people.</div>
+                )}
               </div>
             </div>
-            <div className="form-grid">
-              <Field label="Task owner" required error={err("ownerId")}>
+            <div className="tf-grid">
+              {flowCreate && (
+                <div className="tf-12 tf-seg" role="radiogroup" aria-label="Flow task">
+                  <button type="button" role="radio" aria-checked={isFlow} className={isFlow ? "on" : ""} onClick={() => setIsFlow(true)}>Flow · several people</button>
+                  <button type="button" role="radio" aria-checked={!isFlow} className={!isFlow ? "on" : ""} onClick={() => setIsFlow(false)}>One person</button>
+                </div>
+              )}
+              {flowCreate && isFlow && (
+                <div className="tf-12">
+                  <FlowPeople value={flowIds} onChange={setFlowIds} users={flowOptions?.users ?? []} allowedIds={flowPeopleIds} />
+                </div>
+              )}
+              <Field label="Task owner" required className="tf-12 tf-narrow" error={err("ownerId")}>
                 <Controller
                   name="ownerId"
                   control={control}
@@ -587,7 +587,9 @@ export default function TaskFormPage() {
                   )}
                 />
               </Field>
+              {!(flowCreate && isFlow) && (
               <Field
+                className="tf-12 tf-narrow"
                 label="Assigned to"
                 required
                 error={err("assignedTo")}
@@ -608,95 +610,24 @@ export default function TaskFormPage() {
                   )}
                 />
               </Field>
-              <Field
-                label="Estimate time"
-                error={err("estHours") ?? err("estMinutes")}
-              >
-                <div style={{ display: "flex", gap: 8 }}>
-                  <div className="input-group" style={{ flex: 1 }}>
-                    <input
-                      className="input has-trail"
-                      type="number"
-                      min="0"
-                      step="1"
-                      inputMode="numeric"
-                      placeholder="0"
-                      onKeyDown={blockNonNumericKeys}
-                      {...register("estHours")}
-                    />
-                    <span className="trail">h</span>
-                  </div>
-                  <div className="input-group" style={{ flex: 1 }}>
-                    <input
-                      className="input has-trail"
-                      type="number"
-                      min="0"
-                      step="5"
-                      inputMode="numeric"
-                      placeholder="0"
-                      onKeyDown={blockNonNumericKeys}
-                      {...estMinutesField}
-                    />
-                    <span className="trail">min</span>
-                  </div>
-                </div>
-              </Field>
-              <Field label="Priority" span={2}>
-                <Controller
-                  name="priority"
-                  control={control}
-                  render={({ field }) => (
-                    <ChoiceGroup
-                      name="priority"
-                      options={TASK_PRIORITY_OPTIONS}
-                      value={field.value}
-                      onChange={field.onChange}
-                    />
-                  )}
-                />
-              </Field>
-              {/* next to Priority */}
-              <Field label="Continuous task" span={2}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    minHeight: 40,
-                  }}
-                >
-                  <Controller
-                    name="isContinuous"
-                    control={control}
-                    render={({ field }) => (
-                      <Switch
-                        checked={field.value}
-                        onChange={field.onChange}
-                        label={
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 6,
-                            }}
-                          >
-                            <InfinityIcon style={{ width: 16, height: 16 }} />{" "}
-                            Ongoing{" "}
-                            <span className="muted small">
-                              (no earliest start / end before)
-                            </span>
-                          </span>
-                        }
-                      />
-                    )}
-                  />
-                </div>
-              </Field>
-              {!isContinuous && (
-                <>
+              )}
+            </div>
+          </section>
+
+
+          <section className="card card-lg form-card tf-card">
+            <div className="fc-head">
+              <span className="fc-num">3</span>
+              <div>
+                <div className="form-section-title">Schedule</div>
+              </div>
+            </div>
+            <div className="tf-grid">
+              <>
                   <Field
-                    label="Earliest start"
+                    label="Starts"
                     required
-                    span={2}
+                    className="tf-12 tf-row"
                     error={err("startDate")}
                   >
                     <div style={{ display: "flex", gap: 8 }}>
@@ -737,9 +668,9 @@ export default function TaskFormPage() {
                     </div>
                   </Field>
                   <Field
-                    label="End before"
+                    label="Ends"
                     required
-                    span={2}
+                    className="tf-12 tf-row"
                     error={err("endDate")}
                   >
                     <div style={{ display: "flex", gap: 8 }}>
@@ -773,17 +704,55 @@ export default function TaskFormPage() {
                       </div>
                     </div>
                   </Field>
-                </>
+              </>
+              {!flowCreate && (
+              <Field
+                className="tf-12 tf-narrow"
+                label="Estimate time"
+                error={err("estHours") ?? err("estMinutes")}
+              >
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <input
+                      className="input has-trail"
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      placeholder="0"
+                      onKeyDown={blockNonNumericKeys}
+                      {...register("estHours")}
+                    />
+                    <span className="trail">h</span>
+                  </div>
+                  <div className="input-group" style={{ flex: 1 }}>
+                    <input
+                      className="input has-trail"
+                      type="number"
+                      min="0"
+                      step="5"
+                      inputMode="numeric"
+                      placeholder="0"
+                      onKeyDown={blockNonNumericKeys}
+                      {...estMinutesField}
+                    />
+                    <span className="trail">min</span>
+                  </div>
+                </div>
+              </Field>
               )}
             </div>
           </section>
+          </div>
+          </div>
 
-          {/* status and subtasks are set on the edit page; a new task starts as To do */}
+
+          {/* the status is set on the edit page; a new task starts as To do */}
           {isEdit && (
             <>
               <section className="card card-lg form-card">
                 <div className="fc-head">
-                  <span className="fc-num">3</span>
+                  <span className="fc-num">4</span>
                   <div>
                     <div className="form-section-title">Status</div>
                     <div className="form-section-sub">
@@ -832,116 +801,6 @@ export default function TaskFormPage() {
                 </div>
               </section>
 
-              <section className="card card-lg form-card">
-                <div className="fc-head">
-                  <span className="fc-num">4</span>
-                  <div style={{ flex: 1 }}>
-                    <div className="form-section-title">Subtasks</div>
-                    <div className="form-section-sub">
-                      Break the task into smaller steps, each with its own
-                      person and due date.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() =>
-                      subtasks.append({
-                        title: "",
-                        dueDate: "",
-                        isDone: false,
-                      })
-                    }
-                  >
-                    <Plus />
-                    Add subtask
-                  </button>
-                </div>
-                {subtasks.fields.length === 0 ? (
-                  <div className="muted small" style={{ padding: "4px 0" }}>
-                    No subtasks.
-                  </div>
-                ) : (
-                  <div className="table-wrap">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th className="center" style={{ width: 56 }}>
-                            Done
-                          </th>
-                          <th>Title</th>
-                          <th style={{ width: 190 }}>Due date</th>
-                          <th style={{ width: 48 }} />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {subtasks.fields.map((f, i) => (
-                          <tr key={f.key}>
-                            <td className="center">
-                              <Controller
-                                name={`subtasks.${i}.isDone`}
-                                control={control}
-                                render={({ field }) => (
-                                  <Checkbox
-                                    checked={field.value}
-                                    onChange={field.onChange}
-                                    title="Done"
-                                  />
-                                )}
-                              />
-                            </td>
-                            <td>
-                              <div
-                                className={`field${subErr(i, "title") ? " has-error" : ""}`}
-                                style={{ margin: 0 }}
-                              >
-                                <input
-                                  className="input"
-                                  maxLength={300}
-                                  placeholder="Subtask"
-                                  autoFocus={!f.id && !f.title}
-                                  {...register(`subtasks.${i}.title`)}
-                                />
-                                {subErr(i, "title") && (
-                                  <span className="help">
-                                    {subErr(i, "title")}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td>
-                              <Controller
-                                name={`subtasks.${i}.dueDate`}
-                                control={control}
-                                render={({ field }) => (
-                                  <DatePicker
-                                    value={field.value}
-                                    onChange={field.onChange}
-                                    min={todayIso()} // no past days (user's today)
-                                    max={!isContinuous && endDate ? endDate : undefined} // not after the task's end date
-                                    placeholder="Due date"
-                                  />
-                                )}
-                              />
-                              {subErr(i, "dueDate") && <span className="help" style={{ color: "var(--danger, #c0392b)" }}>{subErr(i, "dueDate")}</span>}
-                            </td>
-                            <td className="center">
-                              <button
-                                type="button"
-                                className="icon-btn is-danger"
-                                title="Remove subtask"
-                                onClick={() => removeSubtask(i)}
-                              >
-                                <Trash2 />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
             </>
           )}
 

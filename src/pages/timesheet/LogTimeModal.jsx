@@ -16,14 +16,12 @@ const hm = (min) => [Math.floor(min / 60) && `${Math.floor(min / 60)} h`, min % 
 /**
  * Quick "Add to timesheet" for a task (from the task list, the task page or the 1-3-5): a small popup where
  * everything comes from the task (shown read-only) and only the time spent, in minutes, is entered.
- *   project task  → project time (task group / type of the project estimate), billable
- *   other task    → time of its category (Personal, Activity …), no project, not billable
  * Day: the 1-3-5 day it was opened from (not in the future), else today. Opens when `job` is set:
- *   { taskId, projectId?, categoryId?, title, subtaskTitle?, minutes?, date? }
+ *   { taskId, title, minutes?, date? }
  */
 export function LogTimeModal({ job, onClose }) {
   if (!job) return <Modal open={false} />;
-  return <LogTimeForm key={`${job.taskId}-${job.subtaskTitle ?? ''}-${job.date ?? ''}`} job={job} onClose={onClose} />;
+  return <LogTimeForm key={`${job.taskId}-${job.date ?? ''}`} job={job} onClose={onClose} />;
 }
 
 function LogTimeForm({ job, onClose }) {
@@ -31,45 +29,22 @@ function LogTimeForm({ job, onClose }) {
   const queryClient = useQueryClient();
   const today = todayIso();
   const date = job.date && job.date <= today ? job.date : today;
-  const comment = job.subtaskTitle ?? job.title ?? '';
-  const isProject = Boolean(job.projectId);
-  // project tasks: my projects with their estimate groups; other tasks: categories and my own tasks
-  const options = useQuery({ queryKey: ['timesheets', 'options'], queryFn: timesheetsApi.options, enabled: isProject });
-  const meta = useQuery({ queryKey: ['timesheets', 'meta'], queryFn: timesheetsApi.meta, enabled: !isProject });
-  const loaded = isProject ? options : meta;
+  const comment = job.title ?? '';
+  // everything comes from the task: the tasks I work on, with their project and category
+  const options = useQuery({ queryKey: ['timesheets', 'options'], queryFn: timesheetsApi.options });
+  const loaded = options;
   const [minutes, setMinutes] = useState(job.minutes ? String(job.minutes) : '');
   const [tried, setTried] = useState(false);
 
   let facts = [];
   let body = null;
   let blocked = null;
-  if (loaded.isSuccess && isProject) {
-    const project = options.data.find((p) => p.id === job.projectId);
-    const task = project?.tasks.find((t) => t.id === job.taskId);
-    // the task's group / type count only when the group is in the project estimate
-    const group = project?.taskGroups.find((g) => g.id === task?.taskGroupId);
-    const type = group?.taskTypes.find((t) => t.id === task?.taskTypeId);
-    if (!project || !task) blocked = 'Only the person the task is assigned to, on the project, can log time on it.';
-    else if (!group || !type) blocked = "The task has no task group / type of the project's estimate – set them on the task first.";
+  if (loaded.isSuccess) {
+    const task = options.data.find((t) => t.id === job.taskId);
+    if (!task) blocked = 'Only a person on the task can log time on it.';
     else {
-      facts = [
-        ['Project', project.title],
-        ['Task group / type', `${group.name} · ${type.name}`],
-      ];
-      body = { projectId: project.id, taskGroupId: group.id, taskTypeId: type.id, isBillable: true };
-    }
-  } else if (loaded.isSuccess) {
-    const task = meta.data.tasks.find((t) => t.id === job.taskId);
-    const category = meta.data.categories.find((c) => c.id === (task?.categoryId ?? job.categoryId));
-    const group = meta.data.taskGroups.find((g) => g.id === task?.taskGroupId);
-    const type = group?.taskTypes.find((t) => t.id === task?.taskTypeId);
-    if (!task) blocked = 'Only the person the task is assigned to can log time on it.';
-    else {
-      facts = [
-        ['Category', category?.name ?? '—'],
-        ['Task group / type', group && type ? `${group.name} · ${type.name}` : '—'],
-      ];
-      body = { categoryId: task.categoryId ?? job.categoryId, projectId: null, taskGroupId: group && type ? group.id : null, taskTypeId: group && type ? type.id : null, isBillable: false };
+      facts = [task.projectTitle ? ['Project', task.projectTitle] : ['Category', task.categoryName ?? '—']];
+      body = {};
     }
   }
   const total = Number(minutes) || 0;
@@ -98,9 +73,6 @@ function LogTimeForm({ job, onClose }) {
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
           <button type="button" className="btn btn-primary" disabled={save.isPending || !body} onClick={submit}>
             <Check />
             {save.isPending ? 'Adding…' : 'Add'}
@@ -113,9 +85,8 @@ function LogTimeForm({ job, onClose }) {
           <Timer />
         </span>
         <div>
-          <span className="t135-tm-label">{job.subtaskTitle ? 'Subtask' : 'Task'}</span>
-          <b>{job.subtaskTitle ?? job.title}</b>
-          {job.subtaskTitle && <span className="small muted">of {job.title}</span>}
+          <span className="t135-tm-label">Task</span>
+          <b>{job.title}</b>
         </div>
       </div>
 

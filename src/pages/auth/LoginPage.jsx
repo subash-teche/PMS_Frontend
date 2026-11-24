@@ -3,12 +3,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useLocation, useNavigate } from 'react-router';
-import { ArrowRight, ChartColumnIncreasing, Info, Mail, ShieldCheck, SquareCheckBig, Target, Users } from 'lucide-react';
+import { ArrowRight, Info, Mail, ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/auth/auth-context';
 import { errorMessage } from '@/api/client';
 import { Checkbox, Field, IconInput, PasswordInput } from '@/components/ui/Field';
 import { ErrorAlert } from '@/components/ui/Display';
 import logo from '@/assets/emqube-logo.svg';
+import { CornerArt, FEATURES } from './AuthArt';
 import '@/styles/login.css';
 
 const schema = z.object({
@@ -16,40 +17,6 @@ const schema = z.object({
   password: z.string().min(1, 'Enter your password'),
   rememberMe: z.boolean(),
 });
-
-const FEATURES = [
-  { icon: SquareCheckBig, title: 'Organize', sub: 'Your work' },
-  { icon: Users, title: 'Collaborate', sub: 'With your team' },
-  { icon: ChartColumnIncreasing, title: 'Track', sub: 'Progress' },
-  { icon: Target, title: 'Achieve', sub: 'Your goals' },
-];
-
-/** Decorative leaves + hill in the bottom-left corner. */
-function CornerArt() {
-  return (
-    <svg className="lg-corner" viewBox="0 0 520 360" aria-hidden="true">
-      <defs>
-        <linearGradient id="lgHill" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#4CBF7A" />
-          <stop offset="1" stopColor="#16A34A" />
-        </linearGradient>
-        <linearGradient id="lgLeaf" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#5FA77A" />
-          <stop offset="1" stopColor="#2F7A4C" />
-        </linearGradient>
-      </defs>
-      <circle cx="210" cy="420" r="300" fill="#CFEFDB" />
-      <circle cx="120" cy="470" r="280" fill="url(#lgHill)" opacity=".9" />
-      <path d="M400 360C330 250 230 190 60 150" stroke="#9BD7B1" strokeWidth="1.5" fill="none" />
-      <g opacity=".85">
-        <path d="M30 160C40 110 60 70 40 20C10 60 0 120 30 160z" fill="url(#lgLeaf)" />
-        <path d="M40 200C80 170 120 140 130 90C90 100 50 140 40 200z" fill="url(#lgLeaf)" />
-        <path d="M20 260C60 250 100 230 120 190C80 190 40 220 20 260z" fill="url(#lgLeaf)" opacity=".8" />
-        <path d="M30 160C30 210 25 250 10 300" stroke="#2F7A4C" strokeWidth="3" fill="none" />
-      </g>
-    </svg>
-  );
-}
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -73,7 +40,8 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(values);
-      navigate(location.state?.from?.pathname || '/', { replace: true });
+      const from = location.state?.from?.pathname;
+      navigate(from || '/', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     }

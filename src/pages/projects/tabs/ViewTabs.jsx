@@ -8,7 +8,7 @@ import { Avatar, EmptyState } from '@/components/ui/Display';
 import { Spinner } from '@/components/ui/Loader';
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '@/lib/format';
 import { SCREENS } from '@/lib/constants';
-import { PriorityBadge, StatusBadge, SubtaskCount, TaskPeople, TaskTimeline } from '@/pages/tasks/TaskListPage';
+import { StatusBadge, TaskPeople, TaskTimeline } from '@/pages/tasks/TaskListPage';
 import { stageChange } from '../stageChange';
 import { ColorDot, CommentsLog, EffortSplit, MemberCell } from './shared';
 
@@ -430,9 +430,7 @@ export function TasksView({ id }) {
               <tr>
                 <th>Task</th>
                 <th>Owner → Assigned to</th>
-                <th>Priority</th>
                 <th>Timeline</th>
-                <th className="center">Subtasks</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -457,14 +455,8 @@ export function TasksView({ id }) {
                   <td className="nowrap">
                     {t.ownerName || t.assignedToName ? <TaskPeople task={t} /> : <span className="muted small">Not assigned</span>}
                   </td>
-                  <td>
-                    <PriorityBadge priority={t.priority} />
-                  </td>
                   <td className="nowrap">
-                    {t.isContinuous || t.plannedEnd ? <TaskTimeline task={t} /> : <span className="muted small">No dates</span>}
-                  </td>
-                  <td className="center">
-                    <SubtaskCount task={t} />
+                    {t.plannedEnd ? <TaskTimeline task={t} /> : <span className="muted small">No dates</span>}
                   </td>
                   <td>
                     <StatusBadge status={t.status} />

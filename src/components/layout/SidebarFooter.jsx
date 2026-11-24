@@ -1,9 +1,12 @@
-import { Link, useNavigate } from 'react-router';
-import { ArrowRight, Bell, BellOff, ChevronsUpDown, KeyRound, LogOut, UserRound } from 'lucide-react';
+import { useNavigate } from 'react-router';
+import { useMemo } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Bell, BellOff, ChevronsUpDown, KeyRound, LogOut, UserRound } from 'lucide-react';
 import { useAuth } from '@/auth/auth-context';
 import { ActionMenu } from '@/components/ui/Dropdown';
 import { Avatar } from '@/components/ui/Display';
 import { SCREENS } from '@/lib/constants';
+import { flowApi } from '@/api/endpoints';
 
 /** Decorative hills along the bottom of the menu (sits behind the footer) – from the design's app.js. */
 export function SideHills() {
@@ -38,60 +41,87 @@ export function SideHills() {
   );
 }
 
-/** "Small plans, big results" card (hidden by theme.css on short screens and when collapsed). */
-function SidePromo() {
-  const { can } = useAuth();
+const clock = (iso) => new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Dubai', hour: '2-digit', minute: '2-digit' });
+const PREVIEW = { note: '', handover: 'Handed over · ', close: 'Closed their step · ' };
+
+/** The bell: unread Messages (count on the bell, one row per person, newest first). Only for people who use the Tasks board. */
+function MessagesBell() {
+  const { user, session } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const on = !!session.apps?.includes('tm');
+  const inbox = useQuery({ queryKey: ['flow-inbox'], queryFn: () => flowApi.messages({ mine: 1 }), enabled: on, refetchInterval: 30_000 }).data;
+  const people = useQuery({ queryKey: ['flow-people'], queryFn: () => flowApi.options(), enabled: on, staleTime: 300_000 }).data?.users ?? [];
+  const readAll = useMutation({ mutationFn: () => flowApi.readAll(), onSuccess: () => qc.invalidateQueries({ queryKey: ['flow-inbox'] }) });
+  const unread = inbox?.unread ?? 0;
+
+  // one row per person, newest first (the feed is newest first, so the first post seen is the latest)
+  const chats = useMemo(() => {
+    const by = new Map();
+    for (const p of inbox?.items ?? []) {
+      if (p.authorId === user.id) continue;
+      const n = p.mentions.some((m) => m.userId === user.id && !m.readAt) ? 1 : 0;
+      const e = by.get(p.authorId);
+      if (e) e.unread += n;
+      else by.set(p.authorId, { last: p, unread: n });
+    }
+    return [...by.entries()];
+  }, [inbox, user.id]);
+
+  const rows = on && chats.length
+    ? chats.map(([id, { last }]) => ({
+        key: id,
+        label: (
+          <span className="bell-row">
+            <span className="bell-row-top">
+              <b>{people.find((u) => u.id === id)?.name ?? 'Someone'}</b>
+              <span className="muted small">{clock(last.createdAt)}</span>
+            </span>
+            <span className="bell-row-msg">{PREVIEW[last.kind]}{last.taskTitle ? `${last.taskTitle}: ` : ''}{last.body}</span>
+          </span>
+        ),
+        onClick: () => navigate('/messages', { state: { personId: id } }),
+      }))
+    : [{
+        key: 'none',
+        label: (
+          <span className="dropdown-empty" style={{ display: 'block', textAlign: 'center' }}>
+            <BellOff style={{ width: 18, height: 18, display: 'block', margin: '0 auto 6px' }} />
+            You&apos;re all caught up
+          </span>
+        ),
+      }];
+
   return (
-    <div className="side-promo">
-      <svg className="sp-art" viewBox="0 0 140 112" aria-hidden="true">
-        <defs>
-          <linearGradient id="spLeafA" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#6FCF8E" />
-            <stop offset="1" stopColor="#1E8A4C" />
-          </linearGradient>
-          <linearGradient id="spLeafB" x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#9BE3A9" />
-            <stop offset="1" stopColor="#2E9E5B" />
-          </linearGradient>
-          <linearGradient id="spLeafC" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor="#B7EDC1" />
-            <stop offset="1" stopColor="#4DB873" />
-          </linearGradient>
-        </defs>
-        <ellipse cx="56" cy="104" rx="30" ry="5" fill="#1E6B3E" opacity=".12" />
-        <path d="M56 104C56 86 56 72 55 58" stroke="#2E8B57" strokeWidth="3.2" fill="none" strokeLinecap="round" />
-        <path d="M55 64C36 66 20 52 18 30c22-2 38 12 37 34z" fill="url(#spLeafA)" />
-        <path d="M55 64C40 56 30 44 26 34" stroke="#ffffff" strokeOpacity=".35" strokeWidth="1.4" fill="none" />
-        <path d="M56 74c2-24 20-38 44-36-2 24-20 38-44 36z" fill="url(#spLeafB)" />
-        <path d="M57 72c10-12 22-22 38-30" stroke="#ffffff" strokeOpacity=".35" strokeWidth="1.4" fill="none" />
-        <path d="M55 50C48 38 50 22 60 12c8 12 6 28-5 38z" fill="url(#spLeafC)" />
-        <path d="M112 54c4-8 12-12 20-10-3 8-11 12-20 10z" fill="url(#spLeafB)" opacity=".85" />
-        <circle cx="104" cy="20" r="3" fill="#C5F06B" />
-        <circle cx="124" cy="34" r="2" fill="#86EFAC" />
-      </svg>
-      <b>
-        Small plans,
-        <br />
-        big results
-      </b>
-      <span>Plan. Track. Deliver.</span>
-      {/* today's 1-3-5 planner (Task → 1-3-5), else the projects */}
-      <Link className="btn sp-btn" to={can(SCREENS.TASK_135) ? SCREENS.TASK_135 : '/projects'}>
-        Plan my day
-        <ArrowRight />
-      </Link>
-    </div>
+    <ActionMenu
+      alignRight={false}
+      minWidth={320}
+      trigger={({ toggle }) => (
+        <button type="button" className="dropdown-toggle su-bell" title="Notifications" aria-label={`Notifications, ${unread} unread`} onClick={toggle}>
+          <Bell />
+          {unread > 0 && <span className="su-bell-count">{unread > 99 ? '99+' : unread}</span>}
+        </button>
+      )}
+      header={
+        <div className="row between" style={{ padding: '6px 10px 8px', gap: 8 }}>
+          <b style={{ fontSize: 13.5 }}>Notifications</b>
+          {on && unread > 0 && (
+            <button type="button" className="btn btn-ghost btn-sm" disabled={readAll.isPending} onClick={() => readAll.mutate()}>Mark all read</button>
+          )}
+        </div>
+      }
+      items={rows}
+    />
   );
 }
 
-/** Promo card + profile menu + notifications, as in the design. */
+/** Profile menu + notifications, as in the design. */
 export function SidebarFooter() {
   const { user, logout, can } = useAuth();
   const navigate = useNavigate();
 
   return (
     <div className="side-foot">
-      <SidePromo />
       <div className="side-user">
         <ActionMenu
           alignRight={false}
@@ -132,27 +162,7 @@ export function SidebarFooter() {
             { label: 'Log out', icon: LogOut, danger: true, onClick: () => logout().then(() => navigate('/login')) },
           ]}
         />
-        <ActionMenu
-          alignRight={false}
-          minWidth={300}
-          trigger={({ toggle }) => (
-            <button type="button" className="dropdown-toggle su-bell" title="Notifications" aria-label="Notifications" onClick={toggle}>
-              <Bell />
-            </button>
-          )}
-          header={
-            <>
-              <div className="row between" style={{ padding: '6px 10px 8px' }}>
-                <b style={{ fontSize: 13.5 }}>Notifications</b>
-              </div>
-              {/* Notifications arrive with the tasks / planner modules */}
-              <div className="dropdown-empty">
-                <BellOff style={{ width: 18, height: 18, display: 'block', margin: '0 auto 6px' }} />
-                You&apos;re all caught up
-              </div>
-            </>
-          }
-        />
+        <MessagesBell />
       </div>
     </div>
   );

@@ -18,7 +18,7 @@ export function AuthProvider({ children }) {
   const apply = useCallback((data) => {
     setAccessToken(data.accessToken ?? null);
     setUserTimeZone(data.user?.timeZone); // all dates / times follow the user's zone
-    setSession({ user: data.user, permissions: data.permissions, projectAccess: data.projectAccess, menus: data.menus });
+    setSession({ user: data.user, apps: data.apps ?? ['pms'], permissions: data.permissions, projectAccess: data.projectAccess, menus: data.menus });
     setStatus('authenticated');
   }, []);
 
@@ -65,7 +65,7 @@ export function AuthProvider({ children }) {
   const reloadSession = useCallback(async () => {
     const data = await authApi.me();
     setUserTimeZone(data.user?.timeZone);
-    setSession({ user: data.user, permissions: data.permissions, projectAccess: data.projectAccess, menus: data.menus });
+    setSession({ user: data.user, apps: data.apps ?? ['pms'], permissions: data.permissions, projectAccess: data.projectAccess, menus: data.menus });
   }, []);
 
   const can = useCallback(

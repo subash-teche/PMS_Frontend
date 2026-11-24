@@ -1,8 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlarmClock, Eye, LayoutTemplate, ListOrdered, CalendarClock, CheckCircle2, CircleDot, ClipboardList, Download, Infinity as InfinityIcon, Pause, Pencil, Play, Plus, Lock, Search, Timer, Trash2, UserRound, Users } from 'lucide-react';
-import { task135Api, taskAccessApi, tasksApi } from '@/api/endpoints';
+import { AlarmClock, Eye, LayoutTemplate, ListOrdered, CalendarClock, CheckCircle2, CircleDot, ClipboardList, Download, Pause, Pencil, Play, Plus, Lock, Search, Timer, Trash2, UserRound, Users } from 'lucide-react';
+import { taskAccessApi, tasksApi } from '@/api/endpoints';
 import { errorMessage } from '@/api/client';
 import { useAuth, usePermissions } from '@/auth/auth-context';
 import { Topbar } from '@/components/layout/Topbar';
@@ -17,7 +17,7 @@ import { useConfirm } from '@/components/ui/confirm-context';
 import { useToast } from '@/components/ui/toast-context';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useSessionState } from '@/hooks/useSessionState';
-import { SCREENS, TASK_PRIORITY, TASK_PRIORITY_OPTIONS, TASK_STATUS, TASK_STATUS_OPTIONS } from '@/lib/constants';
+import { SCREENS, TASK_STATUS, TASK_STATUS_OPTIONS } from '@/lib/constants';
 import { downloadCsv } from '@/lib/csv';
 import { formatDate, formatDateTime, formatDayMonth } from '@/lib/format';
 import { todayIso, zonedParts } from '@/lib/timezone';
@@ -25,7 +25,7 @@ import { StatusChangeModal } from './StatusChangeModal';
 import { LogTimeModal } from '@/pages/timesheet/LogTimeModal';
 import { TaskTabs } from './TaskTabs';
 
-const EMPTY_FILTERS = { status: [], priority: [], categoryId: [], projectId: [], assignedTo: [], employeeId: [], overdue: false };
+const EMPTY_FILTERS = { status: [], categoryId: [], projectId: [], assignedTo: [], employeeId: [], overdue: false };
 
 /** "2 h 30 min" from minutes. */
 export const formatMinutes = (m) => {
@@ -64,15 +64,9 @@ export function dueLabel(t) {
   return { text: `${-days} day${days === -1 ? '' : 's'} overdue`, tone: 'late' };
 }
 
-/** "26 – 31 Oct · in 5 days" / "∞ Ongoing" */
+/** "26 – 31 Oct · in 5 days" */
 export function TaskTimeline({ task: t }) {
-  if (t.isContinuous) {
-    return (
-      <span className="task-timeline" title="Continuous – no start or end date">
-        <InfinityIcon /> Ongoing
-      </span>
-    );
-  }
+  if (!t.plannedEnd) return <span className="muted small">No dates</span>;
   const due = dueLabel(t);
   return (
     <span className="task-timeline" title={`Earliest start ${formatDateTime(t.plannedStart)} · End before ${formatDateTime(t.plannedEnd)}`}>
@@ -107,23 +101,13 @@ export function TaskPeople({ task: t }) {
 }
 
 /** "1/3" badge (green when all done), or a dash */
-export function SubtaskCount({ task: t }) {
-  if (!t.subtaskCount) return <span className="muted">—</span>;
-  return (
-    <span className={`badge${t.subtaskDone === t.subtaskCount ? ' badge-success' : ''}`}>
-      {t.subtaskDone}/{t.subtaskCount}
-    </span>
-  );
-}
-
 export const StatusBadge = ({ status }) => <span className={`badge ${TASK_STATUS[status]?.badge ?? ''}`}>{TASK_STATUS[status]?.label ?? status}</span>;
-export const PriorityBadge = ({ priority }) => (priority ? <span className={`badge ${TASK_PRIORITY[priority]?.badge ?? ''}`}>{TASK_PRIORITY[priority]?.label}</span> : <span className="muted">—</span>);
 
 function Summary({ s }) {
   return (
     <KpiSection storageKey="tasks">
       <WatermarkCard tone="info" title="Open" icon={CircleDot} value={s ? s.toDo + s.inProgress : 0} subs={s && [[s.toDo, 'To do'], [s.inProgress, 'In progress']]} />
-      <WatermarkCard tone="warning" title="Due today" icon={CalendarClock} value={s?.dueToday ?? 0} subs={s && [[s.hold, 'On hold'], [s.continuous, 'Continuous']]} />
+      <WatermarkCard tone="warning" title="Due today" icon={CalendarClock} value={s?.dueToday ?? 0} subs={s && [[s.hold, 'On hold']]} />
       <WatermarkCard tone="danger" title="Overdue" icon={AlarmClock} value={s?.overdue ?? 0} subs={s && [[s.total, 'All tasks']]} />
       <WatermarkCard tone="success" title="Completed" icon={CheckCircle2} value={s?.completed ?? 0} subs={s && [[s.completedThisWeek, 'This week']]} />
     </KpiSection>
@@ -132,10 +116,8 @@ function Summary({ s }) {
 
 export default function TaskListPage() {
   const perms = usePermissions(SCREENS.TASKS);
-  const can135 = usePermissions(SCREENS.TASK_135).create; // "Add to 1-3-5"
-  const canLog = usePermissions(SCREENS.TIMESHEET).create; // "Log time" (project tasks)
   const [logFor, setLogFor] = useState(null);
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
@@ -168,16 +150,6 @@ export default function TaskListPage() {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['tasks'] });
   const [statusChange, setStatusChange] = useState(null); // { task, status } waiting for confirmation
-  // today's 1-3-5 (next free slot)
-  const add135 = useMutation({
-    mutationFn: (t) => task135Api.add({ taskId: t.id }),
-    onSuccess: (item) => {
-      queryClient.invalidateQueries({ queryKey: ['task-135'] });
-      queryClient.invalidateQueries({ queryKey: ['tasks', 'list'] }); // the "In today's 1-3-5" tag
-      toast.success(`Added to ${item.addedByName ? `${item.userName}'s` : 'your'} 1-3-5 for today – slot ${item.position} (${item.size})`);
-    },
-    onError: (err) => toast.error(errorMessage(err)),
-  });
   const setStatus = useMutation({
     mutationFn: ({ id, status, completedOn }) => tasksApi.update(id, { status, ...(completedOn ? { completedOn } : {}) }),
     onSuccess: (t) => {
@@ -210,20 +182,17 @@ export default function TaskListPage() {
   const exportRows = () =>
     downloadCsv(
       'tasks.csv',
-      ['Task', 'Category', 'Project', 'Owner', 'Assigned to', 'Priority', 'Status', 'Earliest start', 'End before', 'Continuous', 'Estimate (mins)', 'Subtasks', 'Completed on'],
+      ['Task', 'Category', 'Project', 'Owner', 'Assigned to', 'Status', 'Earliest start', 'End before', 'Estimate (mins)', 'Completed on'],
       items.map((t) => [
         t.name,
         t.categoryName,
         t.projectTitle,
         t.ownerName,
         t.assignedToName,
-        TASK_PRIORITY[t.priority]?.label,
         TASK_STATUS[t.status]?.label,
         t.plannedStart ? formatDateTime(t.plannedStart) : '',
         t.plannedEnd ? formatDateTime(t.plannedEnd) : '',
-        t.isContinuous ? 'Yes' : 'No',
         t.estimatedMinutes,
-        t.subtaskCount ? `${t.subtaskDone}/${t.subtaskCount}` : '',
         t.completedOn ?? '',
       ]),
     );
@@ -236,34 +205,26 @@ export default function TaskListPage() {
     }
     const ok = await confirm({
       title: 'Delete task?',
-      message: `"${t.name}"${t.subtaskCount ? ` and its ${t.subtaskCount} subtask${t.subtaskCount === 1 ? '' : 's'}` : ''} will be removed.`,
+      message: `"${t.name}" will be removed.`,
     });
     if (ok) remove.mutate(t.id);
   };
 
+  // Starting, timing and completing a task is done in Task Management. People whose role cannot open it keep these here.
   const rowMenu = (t) => {
     const edit = perms.edit && t.canManage; // whole task: owner, creator, admins
-    const update = perms.edit && t.canEdit; // status: also the assignee
-    const status = (s, label, icon) => ({ label, icon, hidden: !update || t.status === s, onClick: () => setStatusChange({ task: t, status: s }) });
+    const move = !session?.apps?.includes('tm') && (t.assignedTo === user.id || t.canManage);
+    const to = (status) => () => setStatusChange({ task: t, status });
     return (
       <RowMenu
         items={[
           { label: 'View details', icon: Eye, onClick: () => navigate(`/tasks/${t.id}`) },
-          // only the person working on the task logs time on it
-          { label: 'Add to timesheet', icon: Timer, hidden: !canLog || !(t.assignedTo === user.id || t.mySubtaskCount > 0), onClick: () => setLogFor({ taskId: t.id, projectId: t.projectId, categoryId: t.categoryId, title: t.name }) },
-          // the assignee adds it to their own 1-3-5; the project owner (task owner without a project) plans it for the assignee
-          {
-            label: t.assignedTo === user.id ? 'Add to my 1-3-5 (today)' : `Add to ${t.assignedToName}'s 1-3-5 (today)`,
-            icon: ListOrdered,
-            hidden: !can135 || t.status === 'completed' || !t.assignedTo || t.inToday135 || !(t.assignedTo === user.id || (t.projectId ? t.projectOwnerId : t.ownerId) === user.id),
-            onClick: () => add135.mutate(t),
-          },
+          { label: 'Start (in progress)', icon: Play, hidden: !move || t.status !== 'to_do', onClick: to('in_progress') },
+          { label: 'Resume', icon: Play, hidden: !move || t.status !== 'hold', onClick: to('in_progress') },
+          { label: 'Mark completed', icon: CheckCircle2, hidden: !move || t.status !== 'in_progress', onClick: to('completed') },
+          { label: 'Put on hold', icon: Pause, hidden: !move || t.status !== 'in_progress', onClick: to('hold') },
+          { label: 'Reopen', icon: Play, hidden: !move || t.status !== 'completed', onClick: to('in_progress') },
           { label: 'Edit', icon: Pencil, hidden: !edit, onClick: () => navigate(`/tasks/${t.id}/edit`) },
-          { divider: true, hidden: !update },
-          status('in_progress', 'Start (in progress)', Play),
-          status('completed', 'Mark completed', CheckCircle2),
-          status('hold', 'Put on hold', Pause),
-          status('to_do', 'Back to to do', CircleDot),
           { divider: true, hidden: !(perms.delete && t.canDelete) },
           { label: 'Delete', icon: Trash2, danger: true, hidden: !(perms.delete && t.canDelete), onClick: () => askDelete(t) },
         ]}
@@ -307,7 +268,6 @@ export default function TaskListPage() {
           </td>
         ),
       },
-      { key: 'priority', label: 'Priority', td: (t) => <td key="priority"><PriorityBadge priority={t.priority} /></td> },
       { key: 'status', label: 'Status', td: (t) => <td key="status"><StatusBadge status={t.status} /></td> },
       // "26 – 31 Oct · in 5 days" (earliest start – end before)
       {
@@ -320,16 +280,6 @@ export default function TaskListPage() {
         ),
       },
       { key: 'estimate', label: 'Estimate', className: 'right', td: (t) => <td key="estimate" className="num right nowrap">{formatMinutes(t.estimatedMinutes)}</td> },
-      {
-        key: 'subtasks',
-        label: 'Subtasks',
-        className: 'center',
-        td: (t) => (
-          <td key="subtasks" className="center">
-            <SubtaskCount task={t} />
-          </td>
-        ),
-      },
       { key: 'completedOn', label: 'Completed on', td: (t) => <td key="completedOn" className="nowrap">{t.completedOn ? formatDate(t.completedOn) : <span className="muted">—</span>}</td> },
     ],
   );
@@ -387,7 +337,6 @@ export default function TaskListPage() {
             />
           </div>
           <Dropdown pill multi placeholder="Status" options={TASK_STATUS_OPTIONS} value={filters.status} onChange={(v) => setFilter('status', v)} />
-          <Dropdown pill multi placeholder="Priority" options={TASK_PRIORITY_OPTIONS} value={filters.priority} onChange={(v) => setFilter('priority', v)} />
           <SingleFilter placeholder="Category" options={categoryOptions} value={filters.categoryId} onChange={(v) => setFilter('categoryId', v)} />
           <SingleFilter search placeholder="Project" options={projectOptions} value={filters.projectId} onChange={(v) => setFilter('projectId', v)} />
           {employeeOptions.length > 1 && <SingleFilter search placeholder="Employee" options={employeeOptions} value={employeeIds} onChange={(v) => setFilter('employeeId', v)} />}

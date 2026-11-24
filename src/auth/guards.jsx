@@ -33,3 +33,10 @@ export function Can({ screen, action = 'view', children, fallback = null }) {
   const { can } = useAuth();
   return can(screen, action) ? children : fallback;
 }
+
+/** Route guard for the Tasks board / 1-3-5 / Messages ('tm'): the API says what the user's role can open. */
+export function RequireApp({ app }) {
+  const { session } = useAuth();
+  if (!session?.apps?.includes(app)) return <ForbiddenPage />;
+  return <Outlet />;
+}

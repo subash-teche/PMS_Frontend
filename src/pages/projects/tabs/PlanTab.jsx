@@ -46,7 +46,7 @@ function statusOf(pr, plannedStart, plannedEnd, today) {
 }
 /** One task: { key (colour), tone, label, late }. Yet to start = yellow, in progress = blue, completed = green. */
 function taskStatus(t, today) {
-  const overdue = Boolean(t.plannedEnd && !t.isContinuous && t.status !== 'completed' && today > t.plannedEnd);
+  const overdue = Boolean(t.plannedEnd && t.status !== 'completed' && today > t.plannedEnd);
   if (t.status === 'completed') {
     const late = Boolean(t.plannedEnd && t.finished && t.finished > t.plannedEnd);
     return { key: 'done', tone: 'success', label: 'Completed', late };
@@ -407,7 +407,7 @@ export function PlanTab({ p }) {
                 {!hidden &&
                   taskList.map((t) => {
                     const ts = taskStatus(t, today);
-                    const dated = t.plannedStart && t.plannedEnd && !t.isContinuous;
+                    const dated = t.plannedStart && t.plannedEnd;
                     // where the task is: the weeks it has been worked on (from when it started to when it was completed, or
                     // to today); a task that has not started yet shows its planned weeks
                     const worked = [t.started, ...(t.logs ?? []).map((l) => l.date)].filter(Boolean).sort();

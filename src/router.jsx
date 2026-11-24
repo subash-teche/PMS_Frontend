@@ -1,6 +1,8 @@
-import { lazy } from 'react';
-import { createBrowserRouter } from 'react-router';
-import { RedirectIfAuthenticated, RequireAuth, RequirePermission } from '@/auth/guards';
+import { lazy, Suspense } from 'react';
+import { FullPageLoader } from '@/components/ui/Loader';
+import { createBrowserRouter, Navigate } from 'react-router';
+import { useAuth } from '@/auth/auth-context';
+import { RedirectIfAuthenticated, RequireApp, RequireAuth, RequirePermission } from '@/auth/guards';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { SCREENS } from '@/lib/constants';
 import LoginPage from '@/pages/auth/LoginPage';
@@ -24,8 +26,27 @@ const TimesheetFormPage = lazy(() => import('@/pages/timesheet/TimesheetFormPage
 const TaskListPage = lazy(() => import('@/pages/tasks/TaskListPage'));
 const TaskFormPage = lazy(() => import('@/pages/tasks/TaskFormPage'));
 const TaskViewPage = lazy(() => import('@/pages/tasks/TaskViewPage'));
+<<<<<<< HEAD
 const TaskFromPlanPage = lazy(() => import('@/pages/tasks/TaskFromPlanPage'));
 const Task135Page = lazy(() => import('@/pages/tasks/Task135Page'));
+=======
+const TaskTemplatePage = lazy(() => import('@/pages/tasks/TaskTemplatePage'));
+// Tasks (flow tasks): Board (with Plan), 1-3-5 and Messages with the original Task Management design (src/tmx),
+// inside the PMS layout; open to ADMIN, PROJECT_MANAGER and EMPLOYEE (RequireApp)
+const TmApp = lazy(() => import('@/tmx/TmApp'));
+/** One app: Tasks opens the board (people who cannot use it keep the plain task list). Messages and the 1-3-5 / tracker views are its screens. */
+function TmScreen({ tab }) {
+  return (
+    <Suspense fallback={<FullPageLoader />}>
+      <TmApp tab={tab} />
+    </Suspense>
+  );
+}
+function TasksHome() {
+  const { session } = useAuth();
+  return session?.apps?.includes('tm') ? <TmScreen tab="dashboard" /> : <TaskListPage />;
+}
+>>>>>>> 0e845f485abf3b37bdd6016aefee0e9d67c90057
 const ConfigListPage = lazy(() => import('@/pages/config/ConfigListPage'));
 const ConfigFormPage = lazy(() => import('@/pages/config/ConfigFormPage'));
 const ProjectTypeFormPage = lazy(() => import('@/pages/config/ProjectTypeFormPage'));
@@ -65,6 +86,8 @@ export const router = createBrowserRouter([
   {
     element: <RequireAuth />,
     children: [
+      { path: 'select-app', element: <Navigate to="/" replace /> },
+      { path: 'tm/*', element: <Navigate to="/tasks" replace /> },
       {
         element: <AppLayout />,
         children: [
@@ -86,10 +109,19 @@ export const router = createBrowserRouter([
           { path: 'projects/new', element: guard(SCREENS.PROJECTS, 'create', <ProjectFormPage key="new" />) },
           { path: 'projects/:id', element: guard(SCREENS.PROJECTS, 'view', <ProjectDetailsPage />) },
           { path: 'projects/:id/edit', element: guard(SCREENS.PROJECTS, 'edit', <ProjectEditPage />) },
-          { path: 'tasks', element: guard(SCREENS.TASKS, 'view', <TaskListPage />) },
+          { path: 'tasks', element: guard(SCREENS.TASKS, 'view', <TasksHome />) },
+          { path: 'tasks/list', element: <Navigate to="/tasks" replace /> },
+          { path: 'tasks/135', element: <Navigate to="/tasks" replace /> },
+          { path: 'tasks/stages', element: <RequireApp app="tm" />, children: [{ index: true, element: <TmScreen tab="stages" /> }] },
+          { path: 'tasks/plan', element: <RequireApp app="tm" />, children: [{ index: true, element: <TmScreen tab="plan" /> }] },
+          { path: 'messages', element: <RequireApp app="tm" />, children: [{ index: true, element: <TmScreen tab="messages" /> }] },
           { path: 'tasks/new', element: guard(SCREENS.TASKS, 'create', <TaskFormPage key="new" />) },
+<<<<<<< HEAD
           { path: 'task-135', element: guard(SCREENS.TASK_135, 'view', <Task135Page />) },
           { path: 'tasks/from-plan', element: guard(SCREENS.TASKS, 'create', <TaskFromPlanPage />) },
+=======
+          { path: 'tasks/from-template', element: guard(SCREENS.TASKS, 'create', <TaskTemplatePage />) },
+>>>>>>> 0e845f485abf3b37bdd6016aefee0e9d67c90057
           { path: 'tasks/:id', element: guard(SCREENS.TASKS, 'view', <TaskViewPage />) },
           { path: 'tasks/:id/edit', element: guard(SCREENS.TASKS, 'edit', <TaskFormPage />) },
           { path: 'timesheet', element: guard(SCREENS.TIMESHEET, 'view', <TimesheetListPage />) },

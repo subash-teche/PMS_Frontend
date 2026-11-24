@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
-import { ChevronRight, LayoutDashboard, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronRight, LayoutDashboard, MessagesSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAuth } from '@/auth/auth-context';
 import logoFull from '@/assets/emqube-logo.svg';
 import logoMark from '@/assets/emqube-mark.svg';
@@ -8,9 +8,7 @@ import { MenuIcon } from './icons';
 import { SideHills, SidebarFooter } from './SidebarFooter';
 
 const isUnder = (pathname, url) => pathname === url || pathname.startsWith(`${url}/`);
-// screens shown as a tab of another screen (hidden from the menu): highlight that screen instead
-const TAB_OF = { '/task-135': '/tasks' };
-const menuPath = (pathname) => TAB_OF[pathname] ?? pathname;
+
 
 /** A module with a single screen is a plain menu item, not a submenu. */
 function NavSingle({ module, active }) {
@@ -58,13 +56,14 @@ function NavModule({ module, active, open, onToggle, collapsed, onExpand, here }
   );
 }
 
-/** Left menu built from the server: only modules / screens the role can view. */
+/** Left menu built from the server: only modules / screens the role can view. Messages (team chat) is for everyone who can open the board. */
 export function Sidebar({ collapsed, onToggle }) {
   const { session } = useAuth();
   const { pathname } = useLocation();
+  const hasMessages = session.apps?.includes('tm');
   // accordion: one module open at a time – the current page's module, or the one clicked.
   // A click is remembered for the current page only, so navigating opens the new page's module.
-  const activeId = session.menus.find((m) => m.children.some((c) => isUnder(menuPath(pathname), c.url)))?.id ?? null;
+  const activeId = session.menus.find((m) => m.children.some((c) => isUnder(pathname, c.url)))?.id ?? null;
   const [clicked, setClicked] = useState({ path: pathname, id: activeId });
   const openId = clicked.path === pathname ? clicked.id : activeId;
 
@@ -109,9 +108,19 @@ export function Sidebar({ collapsed, onToggle }) {
                 onToggle={() => setClicked({ path: pathname, id: openId === m.id ? null : m.id })}
                 collapsed={collapsed}
                 onExpand={onToggle}
-                here={menuPath(pathname)}
+                here={pathname}
               />
             ),
+          )}
+          {hasMessages && (
+            <div className={`nav-group${isUnder(pathname, '/messages') ? ' is-active' : ''}`}>
+              <Link className="nav-module" to="/messages" title="Messages" style={{ textDecoration: 'none' }}>
+                <span className="nav-ico">
+                  <MessagesSquare />
+                </span>
+                <span className="nav-label">Messages</span>
+              </Link>
+            </div>
           )}
         </nav>
 

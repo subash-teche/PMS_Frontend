@@ -66,8 +66,8 @@ export const projectsApi = {
 export const timesheetsApi = {
   list: (params) => data(api.get('/timesheets', { params: toParams(params) })),
   summary: (scope) => data(api.get('/timesheets/summary', { params: { scope } })),
-  options: () => data(api.get('/timesheets/options')),
-  meta: () => data(api.get('/timesheets/meta')), // task categories, all task groups / types, my tasks without a project
+  options: () => data(api.get('/timesheets/options')), // the tasks I work on, with project and category
+  categories: () => data(api.get('/timesheets/categories')), // for the list filter
   projects: () => data(api.get('/timesheets/projects')),
   get: (id) => data(api.get(`/timesheets/${id}`)),
   create: (body) => data(api.post('/timesheets', body)),
@@ -89,7 +89,6 @@ export const tasksApi = {
   templateProjects: () => data(api.get('/tasks/plan-projects')),
   planTasks: (projectId) => data(api.get(`/tasks/plan-projects/${projectId}/plan`)),
   fromPlan: (body) => data(api.post('/tasks/from-plan', body)),
-  subtaskDone: (id, subtaskId, isDone) => data(api.put(`/tasks/${id}/subtasks/${subtaskId}/done`, { isDone })),
 };
 
 /** Task Master: who can see whose tasks / timesheets; the Employee filter's people */
@@ -102,12 +101,12 @@ export const taskAccessApi = {
 /** 1-3-5 planner (own items only) */
 export const task135Api = {
   day: (date) => data(api.get('/task-135', { params: date ? { date } : {} })),
-  subtasks: (search) => data(api.get('/task-135/subtasks', { params: search ? { search } : {} })), // open subtasks assigned to me
   add: (body) => data(api.post('/task-135', body)),
   update: (id, body) => data(api.put(`/task-135/${id}`, body)),
   reorder: (date, ids) => data(api.put('/task-135/reorder', { date, ids })),
   move: (id, date, mode) => data(api.post(`/task-135/${id}/move`, { date, mode })),
   remove: (id) => data(api.delete(`/task-135/${id}`)),
+  flowPlanned: (date) => data(api.get('/task-135/flow-planned', { params: date ? { date } : {} })), // what I planned in Task Management
 };
 
 export const mastersApi = {
@@ -126,3 +125,29 @@ export const configApi = (name) => ({
 });
 export const parameterTypes = () => data(api.get('/config/parameters/types'));
 export const customerSummary = () => data(api.get('/config/customers/summary'));
+
+/** Task Management (flow tasks): /api/v1/flow */
+export const flowApi = {
+  options: () => data(api.get('/flow/options')),
+  tasks: (params) => data(api.get('/flow/tasks', { params: toParams(params) })),
+  get: (id) => data(api.get(`/flow/tasks/${id}`)),
+  activity: (id) => data(api.get(`/flow/tasks/${id}/activity`)),
+  create: (body) => data(api.post('/flow/tasks', body)),
+  update: (id, body) => data(api.patch(`/flow/tasks/${id}`, body)),
+  remove: (id) => data(api.delete(`/flow/tasks/${id}`)),
+  step: (id, action, body) => data(api.post(`/flow/tasks/${id}/${action}`, body)), // action: accept | start | close
+  logTime: (id, body) => data(api.post(`/flow/tasks/${id}/log`, body)),
+  reorder: (taskIds) => data(api.post('/flow/tasks/reorder', { taskIds })), // new priority order of tasks
+  pass: (id, body) => data(api.post(`/flow/tasks/${id}/pass`, body)),
+  editFlow: (id, body) => data(api.put(`/flow/tasks/${id}/flow`, body)),
+  plan: (user) => data(api.get('/flow/plan', { params: toParams({ user }) })),
+  setPlan: (body) => data(api.put('/flow/plan', body)),
+  timer: () => data(api.get('/flow/timer')),
+  addTimer: (body) => data(api.post('/flow/timer', body)),
+  timerAction: (id, action, body) => data(api.post(`/flow/timer/${id}/${action}`, body ?? {})), // start | pause | end | move | copy
+  removeTimer: (id) => data(api.delete(`/flow/timer/${id}`)),
+  messages: (params) => data(api.get('/flow/messages', { params: toParams(params) })),
+  post: (body) => data(api.post('/flow/messages', body)),
+  readAll: () => data(api.post('/flow/messages/read-all')),
+  readMany: (ids) => data(api.post('/flow/messages/read-many', { ids })),
+};

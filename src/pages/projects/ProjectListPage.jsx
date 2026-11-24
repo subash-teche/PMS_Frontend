@@ -672,9 +672,6 @@ export default function ProjectListPage() {
         title={bulk === 'owner' ? 'Change owner' : 'Change stage'}
         footer={
           <>
-            <button type="button" className="btn btn-ghost" onClick={() => setBulk(null)} disabled={bulkUpdate.isPending}>
-              Cancel
-            </button>
             <button
               type="button"
               className="btn btn-primary"

@@ -165,7 +165,7 @@ export function ActionMenu({ trigger, items = [], header, alignRight = true, min
               <div key={`d${i}`} className="dropdown-divider" />
             ) : (
               <div
-                key={item.label}
+                key={item.key ?? item.label}
                 className={`dropdown-option${item.danger ? ' is-danger' : ''}`}
                 onClick={() => {
                   close();

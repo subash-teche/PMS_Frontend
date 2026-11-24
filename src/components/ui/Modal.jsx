@@ -51,9 +51,6 @@ export function ConfirmDeleteModal({ open, onClose, onConfirm, title, message, b
       title={title}
       footer={
         <>
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
           <button type="button" className={`btn btn-${tone}`} onClick={onConfirm} disabled={busy}>
             {tone === 'danger' ? <Trash2 /> : <Check />}
             {busy ? (tone === 'danger' ? 'Deleting…' : 'Saving…') : confirmLabel}

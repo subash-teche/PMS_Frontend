@@ -54,10 +54,10 @@ function UserSummary({ s }) {
       />
       <StackCard title="On leave today" icon={Plane} value={s?.onLeave.total} people={s?.onLeave.people} emptyText="Nobody is on leave" />
       <RowsCard
-        title="Customer / vendor logins"
+        title="Customer logins"
         icon={Building2}
-        value={s ? s.externalLogins.customer + s.externalLogins.vendor : undefined}
-        rows={s ? [['Customer', s.externalLogins.customer], ['Vendor', s.externalLogins.vendor]] : []}
+        value={s ? s.externalLogins.customer : undefined}
+        rows={s ? [['Customer', s.externalLogins.customer]] : []}
       />
     </KpiSection>
   );

@@ -1,7 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from 'react-router';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ActivityBar } from '@/hooks/useActivity';
 import { AuthProvider } from '@/auth/AuthProvider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { ConfirmProvider } from '@/components/ui/Confirm';
@@ -10,6 +11,8 @@ import '@/styles/theme.css';
 import '@/styles/app.css';
 
 const queryClient = new QueryClient({
+  // after any save, whatever is on screen is fetched again, so every page shows the latest data without a reload
+  mutationCache: new MutationCache({ onSuccess: () => queryClient.invalidateQueries() }),
   defaultOptions: {
     queries: {
       staleTime: 30_000,
@@ -23,6 +26,7 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <ActivityBar />
       <ToastProvider>
         <ConfirmProvider>
           <AuthProvider>

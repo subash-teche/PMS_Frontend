@@ -1,26 +1,23 @@
-import { ListOrdered, UserRound, Users } from 'lucide-react';
+import { UserRound, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { usePermissions } from '@/auth/auth-context';
 import { SCREENS } from '@/lib/constants';
 
 /**
- * The Task page tabs: My tasks / All tasks (the task list, /tasks) and 1-3-5 (the day planner, /task-135).
+ * The Task page tabs: My tasks / All tasks (the task list, /tasks/list). The Board, 1-3-5 and Plan are on the Tasks page (/tasks).
  * On the list, `onScope` switches the list in place; from the planner a scope tab opens the list on it.
  */
 export function TaskTabs({ active, onScope }) {
   const navigate = useNavigate();
-  const can135 = usePermissions(SCREENS.TASK_135).view;
   const canTasks = usePermissions(SCREENS.TASKS).view;
   const tabs = [
     ...(canTasks ? [['mine', 'My tasks', UserRound]] : []),
     ...(canTasks ? [['all', 'All tasks', Users]] : []), // everything I can see (my projects, role scope, Task Master)
-    ...(can135 ? [['135', '1-3-5', ListOrdered]] : []),
   ];
   const open = (key) => {
     if (key === active) return;
-    if (key === '135') navigate('/task-135');
-    else if (onScope) onScope(key);
-    else navigate('/tasks', { state: { scope: key } });
+    if (onScope) onScope(key);
+    else navigate('/tasks/list', { state: { scope: key } });
   };
   return (
     <div className="tabs" role="tablist">

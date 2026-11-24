@@ -28,7 +28,7 @@ const schema = z.object({
     z.number({ error: 'Enter a level' }).int('Whole number').min(0, '0 or more').max(99, '99 or less'),
   ),
   roleType: z.enum(['internal', 'external']),
-  dataScope: z.enum(['all', 'team', 'own', 'customer', 'vendor']),
+  dataScope: z.enum(['all', 'team', 'own', 'customer']),
   isActive: z.boolean(),
 });
 
@@ -324,7 +324,7 @@ export default function RoleFormPage() {
               <Field label="Level" required error={err('level')} help={levelHelp}>
                 <input className="input" type="number" min="0" max="99" placeholder="0" readOnly={isSystem} {...register('level')} />
               </Field>
-              <Field label="Role type" help="external = customer / vendor logins">
+              <Field label="Role type" help="external = customer logins">
                 <Controller
                   name="roleType"
                   control={control}

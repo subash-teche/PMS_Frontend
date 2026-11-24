@@ -38,9 +38,6 @@ function Dialog({ change, busy, onClose, onConfirm }) {
       title={completing ? 'Complete task?' : 'Change status?'}
       footer={
         <>
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
           <button type="button" className="btn btn-primary" onClick={confirm} disabled={busy}>
             <Check />
             {busy ? 'Saving…' : completing ? 'Mark completed' : `Set to ${TASK_STATUS[status].label}`}

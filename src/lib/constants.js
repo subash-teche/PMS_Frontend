@@ -43,29 +43,20 @@ export const PROJECT_STATUS = {
 // What a project stage "counts as" (lookups.value of a PROJECT_STAGE) – drives the badge colour and summaries.
 export const STAGE_CATEGORIES = Object.entries(PROJECT_STATUS).map(([value, s]) => ({ value, label: s.label }));
 
-// Task status / priority → label and badge colour
+// Task status → label and badge colour
 export const TASK_STATUS = {
   to_do: { label: 'To do', badge: '' },
   in_progress: { label: 'In progress', badge: 'badge-info' },
   hold: { label: 'Hold', badge: 'badge-warning' },
   completed: { label: 'Completed', badge: 'badge-success' },
 };
-export const TASK_PRIORITY = {
-  low: { label: 'Low', badge: '' },
-  medium: { label: 'Medium', badge: 'badge-info' },
-  high: { label: 'High', badge: 'badge-warning' },
-  urgent: { label: 'Urgent', badge: 'badge-danger' },
-};
 export const TASK_STATUS_OPTIONS = Object.entries(TASK_STATUS).map(([value, x]) => ({ value, label: x.label, tone: value }));
-// tone = chip colour on the task form (grey / blue / amber / red)
-export const TASK_PRIORITY_OPTIONS = Object.entries(TASK_PRIORITY).map(([value, x]) => ({ value, label: x.label, tone: value }));
 
 export const DATA_SCOPES = [
   { value: 'all', label: 'All' },
   { value: 'team', label: 'Team' },
   { value: 'own', label: 'Own' },
   { value: 'customer', label: 'Customer' },
-  { value: 'vendor', label: 'Vendor' },
 ];
 
 export const TIME_ZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Europe/London', 'America/New_York'];

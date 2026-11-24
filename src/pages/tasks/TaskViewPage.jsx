@@ -1,22 +1,20 @@
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, Check, CheckCircle2, CircleDot, Clock3, ClipboardList, History, ListChecks, ListOrdered, Lock, Pause, Pencil, Play, RotateCcw, Timer } from 'lucide-react';
-import { task135Api, tasksApi } from '@/api/endpoints';
+import { Check, CheckCircle2, CircleDot, Clock3, ClipboardList, History, ListChecks, Lock, Pause, Pencil, Play, RotateCcw, Timer } from 'lucide-react';
+import { tasksApi } from '@/api/endpoints';
 import { errorMessage } from '@/api/client';
 import { useAuth, usePermissions } from '@/auth/auth-context';
 import { Topbar } from '@/components/layout/Topbar';
 import { Avatar, ErrorAlert } from '@/components/ui/Display';
-import { Checkbox } from '@/components/ui/Field';
 import { RowMenu } from '@/components/ui/ColumnPicker';
 import { FullPageLoader, Spinner } from '@/components/ui/Loader';
-import { useConfirm } from '@/components/ui/confirm-context';
 import { useToast } from '@/components/ui/toast-context';
 import { SCREENS, TASK_STATUS } from '@/lib/constants';
 import { formatDateTime, formatDayMonth, formatDayMonthTime } from '@/lib/format';
 import { todayIso, zonedParts } from '@/lib/timezone';
 import NotFoundPage from '@/pages/errors/NotFoundPage';
-import { formatMinutes, PriorityBadge, StatusBadge } from './TaskListPage';
+import { formatMinutes, StatusBadge } from './TaskListPage';
 import { StatusChangeModal } from './StatusChangeModal';
 import { LogTimeModal } from '@/pages/timesheet/LogTimeModal';
 
@@ -28,7 +26,6 @@ const mins = (m) => (m ? formatMinutes(m) : '0 min');
 
 /** "8 days left" / "due today" / "2 days overdue" for the end before date. */
 function dueText(t) {
-  if (t.isContinuous) return 'Continuous – no end date';
   if (!t.plannedEnd) return 'No end date';
   if (t.status === 'completed') return dayTime(t.plannedEnd);
   // whole days between today and the end date, both in the user's zone
@@ -60,7 +57,7 @@ function Timeline({ t }) {
   const steps = [
     { state: 'done', label: 'Created', sub: `${day(t.createdAt)}${t.createdByName ? `, by ${t.createdByName}` : ''}` },
     middle,
-    { state: t.isOverdue ? 'late' : 'todo', label: t.isContinuous ? 'Ongoing' : 'Due', sub: dueText(t) },
+    { state: t.isOverdue ? 'late' : 'todo', label: 'Due', sub: dueText(t) },
   ];
   return (
     <div className="td-timeline">
@@ -88,7 +85,6 @@ function Activity({ id }) {
     const status = /^Status:? (.+?) → (.+)$/.exec(msg); // "Status: In progress → Completed" (older: "Status in_progress → hold")
     if (a.action === 'create') return { what: 'Task created', note: null };
     if (status) return { what: 'Status changed', note: `${TASK_STATUS[status[1]]?.label ?? status[1]} → ${TASK_STATUS[status[2]]?.label ?? status[2]}` };
-    if (msg.startsWith('Subtask')) return { what: 'Subtask updated', note: msg };
     if (a.action === 'delete') return { what: 'Task deleted', note: null };
     return { what: 'Task updated', note: msg && msg !== 'Task details updated' ? msg : 'Task details changed.' };
   };
@@ -174,23 +170,17 @@ function Efforts({ e }) {
 
 /**
  * Task details – a read view for the people doing the work: the assignee moves the status along
- * and ticks subtasks; a subtask assignee ticks their own. The owner / creator also get Edit.
+ * (sub tasks are created and followed in Task Management; here only their status shows). The owner / creator also get Edit.
  */
 export default function TaskViewPage() {
   const { id } = useParams();
   // opened from another page (e.g. a project's Tasks tab)? go back there
   const from = useLocation().state?.from;
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const perms = usePermissions(SCREENS.TASKS);
-  // subtasks assigned to me can go on today's 1-3-5
-  const can135 = usePermissions(SCREENS.TASK_135).create;
-  const today135 = useQuery({ queryKey: ['task-135', 'today'], queryFn: () => task135Api.day(), enabled: can135 });
-  const subsToday = new Set((today135.data?.items ?? []).filter((i) => i.subtaskId).map((i) => i.subtaskId));
   const toast = useToast();
-  const confirm = useConfirm();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState('subtasks');
-  const canLog = usePermissions(SCREENS.TIMESHEET).create; // "Log time" on a project task
+  const [tab, setTab] = useState('efforts');
   const [logFor, setLogFor] = useState(null);
   const [statusChange, setStatusChange] = useState(null); // { task, status } waiting for confirmation
   const task = useQuery({ queryKey: ['tasks', 'item', id], queryFn: () => tasksApi.get(id), retry: false });
@@ -211,41 +201,11 @@ export default function TaskViewPage() {
     },
     onError: (err) => toast.error(errorMessage(err)),
   });
-  const add135 = useMutation({
-    mutationFn: (sub) => task135Api.add({ subtaskId: sub.id }),
-    onSuccess: (item) => {
-      queryClient.invalidateQueries({ queryKey: ['task-135'] });
-      toast.success(`Added to today's 1-3-5 – slot ${item.position} (${item.size})`);
-    },
-    onError: (err) => toast.error(errorMessage(err)),
-  });
-  const tick = useMutation({
-    mutationFn: ({ sub, isDone }) => tasksApi.subtaskDone(id, sub.id, isDone),
-    onSuccess: (t, { sub, isDone }) => {
-      onSaved(t);
-      toast.success(`"${sub.title}" ${isDone ? 'done' : 'reopened'}`);
-    },
-    onError: (err) => toast.error(errorMessage(err)),
-  });
 
   if (task.isLoading) return <FullPageLoader />;
   if (task.isError) return task.error?.response?.status === 404 ? <NotFoundPage what="Task" /> : <ErrorAlert>{errorMessage(task.error)}</ErrorAlert>;
 
   const t = task.data;
-  const canStatus = perms.edit && t.canEdit;
-  const canTick = (s) => t.canEdit || s.assignedTo === user.id;
-  const next = NEXT[t.status];
-  const openSubs = t.subtaskCount - t.subtaskDone;
-  const today = todayIso();
-  const askTick = async (s, isDone) => {
-    const ok = await confirm({
-      title: isDone ? 'Mark subtask done?' : 'Mark subtask not done?',
-      message: isDone ? `"${s.title}" will be marked as done.` : `"${s.title}" will be opened again.`,
-      confirmLabel: isDone ? 'Mark done' : 'Reopen',
-      tone: 'primary',
-    });
-    if (ok) tick.mutate({ sub: s, isDone });
-  };
 
   return (
     <>
@@ -265,33 +225,22 @@ export default function TaskViewPage() {
             {t.description && <p className="td-desc">{t.description}</p>}
           </div>
           <div className="td-actions">
-            <PriorityBadge priority={t.priority} />
             <StatusBadge status={t.status} />
-            {canStatus && (
-              <button type="button" className={`btn ${next.primary ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setStatusChange({ task: t, status: next.status })}>
-                <next.icon />
-                {next.label}
-              </button>
-            )}
-            {/* only the person working on the task (assignee / a subtask assignee) logs time on it */}
-            {canLog && (t.assignedTo === user.id || t.mySubtaskCount > 0) && (
-              <button type="button" className="btn btn-secondary" onClick={() => setLogFor({ taskId: t.id, projectId: t.projectId, categoryId: t.categoryId, title: t.name })}>
-                <Timer />
-                Add to timesheet
-              </button>
-            )}
+            {/* Starting, timing and completing a task is done in Task Management. People whose role cannot open it keep the status button here. */}
+            {!session?.apps?.includes('tm') && NEXT[t.status] && (t.assignedTo === user.id || t.canManage) && (() => {
+              const n = NEXT[t.status];
+              return (
+                <button type="button" className={`btn ${n.primary ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setStatusChange({ task: t, status: n.status })}>
+                  <n.icon />
+                  {n.label}
+                </button>
+              );
+            })()}
             {perms.edit && t.canManage && (
               <Link className="btn btn-secondary" to={`/tasks/${t.id}/edit`} state={{ from: `/tasks/${t.id}`, viewFrom: from }}>
                 <Pencil />
                 Edit
               </Link>
-            )}
-            {canStatus && (
-              <RowMenu
-                items={Object.keys(TASK_STATUS)
-                  .filter((s) => s !== t.status && s !== next.status)
-                  .map((s) => ({ label: `Set to ${TASK_STATUS[s].label}`, icon: STATUS_ICON[s], onClick: () => setStatusChange({ task: t, status: s }) }))}
-              />
             )}
           </div>
         </div>
@@ -322,14 +271,13 @@ export default function TaskViewPage() {
             <div className="td-private">
               <Lock />
               <b>Personal task</b>
-              <p className="muted small">This is {t.assignedToName ?? t.ownerName}&apos;s personal task – only they can see its details, subtasks and history.</p>
+              <p className="muted small">This is {t.assignedToName ?? t.ownerName}&apos;s personal task – only they can see its details and history.</p>
             </div>
           </section>
         ) : (
         <section className="tile td-main">
           <div className="tabs" role="tablist" style={{ marginBottom: 16 }}>
             {[
-              ['subtasks', 'Subtasks', ListChecks, t.subtaskCount],
               ['efforts', 'Efforts', Timer, efforts.data?.totalMinutes ? formatMinutes(efforts.data.totalMinutes) : undefined],
               ['activity', 'Activity', History],
             ].map(([key, label, Icon, count]) => (
@@ -343,64 +291,7 @@ export default function TaskViewPage() {
             ))}
           </div>
 
-          {tab === 'subtasks' ? (
-            t.subtaskCount === 0 ? (
-              <p className="muted small">No subtasks.</p>
-            ) : (
-              <>
-                <div className="td-progress">
-                  <div className="progress grow">
-                    <span style={{ width: `${Math.round((t.subtaskDone / t.subtaskCount) * 100)}%` }} />
-                  </div>
-                  <span className="small">
-                    <b>{t.subtaskDone}</b> of {t.subtaskCount} done
-                  </span>
-                </div>
-                <div className="td-subtasks td-scroll">
-                  {t.subtasks.map((s) => {
-                    const mine = s.assignedTo === user.id;
-                    const late = !s.isDone && s.dueDate && s.dueDate < today;
-                    return (
-                      <div key={s.id} className={`td-subtask${s.isDone ? ' is-done' : ''}${mine ? ' is-mine' : ''}`}>
-                        <Checkbox
-                          checked={s.isDone}
-                          disabled={!canTick(s) || tick.isPending}
-                          title={canTick(s) ? (s.isDone ? 'Mark not done' : 'Mark done') : 'Only the person the task is assigned to can tick it'}
-                          onChange={(v) => askTick(s, v)}
-                        />
-                        <div className="td-st-title">
-                          {s.title}
-                          {s.isDone && <span className="badge badge-success">Done</span>}
-                          {mine && !s.isDone && can135 &&
-                            (subsToday.has(s.id) ? (
-                              <span className="badge badge-success" title="On today's 1-3-5">
-                                In today&apos;s 1-3-5
-                              </span>
-                            ) : (
-                              <button type="button" className="td-st-135" disabled={add135.isPending} onClick={() => add135.mutate(s)} title="Add to today's 1-3-5">
-                                <ListOrdered />
-                                Add to 1-3-5
-                              </button>
-                            ))}
-                        </div>
-                        <div className="td-st-meta">
-                          <span className={`td-st-due${late ? ' is-late' : ''}`}>
-                            <CalendarClock />
-                            {s.dueDate ? day(s.dueDate) : 'No due date'}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {t.status === 'completed' && openSubs > 0 && (
-                  <div className="td-note">
-                    The task is completed, but {openSubs === 1 ? 'this subtask is' : `${openSubs} subtasks are`} still open.
-                  </div>
-                )}
-              </>
-            )
-          ) : tab === 'efforts' ? (
+          {tab === 'efforts' ? (
             efforts.isLoading ? <Spinner /> : efforts.data ? <Efforts e={efforts.data} /> : <ErrorAlert>{errorMessage(efforts.error)}</ErrorAlert>
           ) : (
             <Activity id={id} />
@@ -429,19 +320,10 @@ export default function TaskViewPage() {
                   </dd>
                 </>
               )}
-              {t.isContinuous ? (
-                <>
-                  <dt>Schedule</dt>
-                  <dd>Continuous</dd>
-                </>
-              ) : (
-                <>
-                  <dt>Earliest start</dt>
-                  <dd>{dayTime(t.plannedStart)}</dd>
-                  <dt>End before</dt>
-                  <dd style={t.isOverdue ? { color: 'var(--danger)' } : undefined}>{dayTime(t.plannedEnd)}</dd>
-                </>
-              )}
+              <dt>Earliest start</dt>
+              <dd>{dayTime(t.plannedStart)}</dd>
+              <dt>End before</dt>
+              <dd style={t.isOverdue ? { color: 'var(--danger)' } : undefined}>{dayTime(t.plannedEnd)}</dd>
               {t.completedOn && (
                 <>
                   <dt>Completed on</dt>
