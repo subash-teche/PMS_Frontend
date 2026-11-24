@@ -81,7 +81,6 @@ export default function DivisionFormPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config', 'project-divisions'] });
       queryClient.invalidateQueries({ queryKey: ['config', 'project-types'] });
-      queryClient.invalidateQueries({ queryKey: ['config', 'task-templates'] });
       queryClient.invalidateQueries({ queryKey: ['masters'] });
       toast.success(isEdit ? 'Division saved' : 'Division created');
       navigate(BASE);

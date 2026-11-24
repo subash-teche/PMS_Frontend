@@ -358,9 +358,9 @@ export default function TaskListPage() {
             </button>
           )}
           {perms.create && (
-            <Link className="btn btn-secondary" to="/tasks/from-template">
+            <Link className="btn btn-secondary" to="/tasks/from-plan">
               <LayoutTemplate />
-              Add from template
+              Add from plan
             </Link>
           )}
           {perms.create && (

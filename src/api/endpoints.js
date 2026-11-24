@@ -85,11 +85,9 @@ export const tasksApi = {
   remove: (id) => data(api.delete(`/tasks/${id}`)),
   activity: (id) => data(api.get(`/tasks/${id}/activity`)),
   efforts: (id) => data(api.get(`/tasks/${id}/efforts`)), // time logged in the timesheet against the task
-  // add from template
-  templateProjects: () => data(api.get('/tasks/template-projects')),
-  projectTemplates: (projectId) => data(api.get(`/tasks/template-projects/${projectId}/templates`)),
-  fromTemplate: (body) => data(api.post('/tasks/from-template', body)),
-  planTasks: (projectId) => data(api.get(`/tasks/template-projects/${projectId}/plan`)),
+  // add from the plan
+  templateProjects: () => data(api.get('/tasks/plan-projects')),
+  planTasks: (projectId) => data(api.get(`/tasks/plan-projects/${projectId}/plan`)),
   fromPlan: (body) => data(api.post('/tasks/from-plan', body)),
   subtaskDone: (id, subtaskId, isDone) => data(api.put(`/tasks/${id}/subtasks/${subtaskId}/done`, { isDone })),
 };

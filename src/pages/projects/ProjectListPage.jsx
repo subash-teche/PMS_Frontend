@@ -700,7 +700,7 @@ export default function ProjectListPage() {
       <ConfirmDeleteModal
         open={deleteIds.length > 0}
         title={deleteIds.length > 1 ? `Delete ${deleteIds.length} projects?` : 'Delete project?'}
-        message={`${deleteIds.length > 1 ? 'These projects' : 'This project'} will be removed with ${deleteIds.length > 1 ? 'their' : 'its'} template tasks. Projects with logged time cannot be deleted – set their stage to Cancelled instead. This action is written to the audit log.`}
+        message={`${deleteIds.length > 1 ? 'These projects' : 'This project'} will be removed with ${deleteIds.length > 1 ? 'their' : 'its'} tasks. Projects with logged time cannot be deleted – set their stage to Cancelled instead. This action is written to the audit log.`}
         busy={remove.isPending}
         onClose={() => setToDelete(null)}
         onConfirm={() => remove.mutate(deleteIds)}

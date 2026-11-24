@@ -38,7 +38,6 @@ const PAGES = [
     tabs: [
       { key: 'project-divisions', label: 'Project Divisions', icon: Building2 },
       { key: 'project-types', label: 'Project Types', icon: Briefcase },
-      { key: 'task-templates', label: 'Task Templates', icon: ClipboardList },
     ],
   },
 ];

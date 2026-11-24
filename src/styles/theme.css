@@ -1970,6 +1970,14 @@ svg.lucide.muted-ic { width: 15px; height: 15px; color: var(--ink-3); vertical-a
 .gp-seg .is-done { background: #16a34a; }
 .gp-seg .is-progress { background: #2563eb; }
 .gp-seg .is-todo { background: #fbbf24; }
+.gp-types { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.gp-type { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: 11.5px; color: var(--ink-2); }
+.gp-type-name { font-weight: 600; color: var(--ink); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-type-count { color: var(--ink-3); }
+.gp-chip { display: inline-flex; align-items: center; gap: 3px; padding: 0 7px; border-radius: var(--r-pill); font-size: 10.5px; font-weight: 700; line-height: 17px; white-space: nowrap; }
+.gp-chip.is-done { background: #dcfce7; color: #15803d; }
+.gp-chip.is-progress { background: #dbeafe; color: #1d4ed8; }
+.gp-chip.is-todo { background: #fef3c7; color: #b45309; }
 .gp-task { min-height: 52px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
 .gp-task .gp-label { padding: 6px 12px 6px 46px; gap: 8px; }
 .gp-tinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }

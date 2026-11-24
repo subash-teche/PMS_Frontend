@@ -55,6 +55,20 @@ function taskStatus(t, today) {
   if (t.status === 'hold') return { key: 'todo', tone: 'warning', label: 'On hold', late: overdue };
   return { key: 'todo', tone: 'warning', label: 'Yet to start', late: overdue };
 }
+/** The task types that have tasks in a group, with the task count and status split of each (on hold counts as yet to start). */
+function typesOf(tasks) {
+  const map = new Map();
+  for (const t of tasks) {
+    const key = t.taskTypeId ?? 'none';
+    const ty = map.get(key) ?? { key, name: t.taskTypeName ?? 'No task type', total: 0, done: 0, progress: 0, todo: 0 };
+    ty.total += 1;
+    if (t.status === 'completed') ty.done += 1;
+    else if (t.status === 'in_progress') ty.progress += 1;
+    else ty.todo += 1;
+    map.set(key, ty);
+  }
+  return [...map.values()].sort((a, b) => (a.key === 'none') - (b.key === 'none') || b.total - a.total || a.name.localeCompare(b.name));
+}
 const fmtMin = (m) => (m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`);
 /** Time for a bar: 45 min, 1.5 h, 12 h. */
 const shortMin = (m) => (m < 60 ? `${m} min` : `${Math.round((m / 60) * 10) / 10} h`);
@@ -317,6 +331,19 @@ export function PlanTab({ p }) {
                           <i className="is-done" style={{ width: `${(pr.completed / pr.total) * 100}%` }} />
                           <i className="is-progress" style={{ width: `${(pr.inProgress / pr.total) * 100}%` }} />
                           <i className="is-todo" style={{ width: `${((pr.toDo + pr.hold) / pr.total) * 100}%` }} />
+                        </span>
+                      )}
+                      {typesOf(taskList).length > 0 && (
+                        <span className="gp-types">
+                          {typesOf(taskList).map((ty) => (
+                            <span key={ty.key} className="gp-type">
+                              <span className="gp-type-name" title={ty.name}>{ty.name}</span>
+                              <span className="gp-type-count">· {ty.total} task{ty.total === 1 ? '' : 's'}</span>
+                              {ty.done > 0 && <span className="gp-chip is-done">{ty.done} completed</span>}
+                              {ty.progress > 0 && <span className="gp-chip is-progress">{ty.progress} in progress</span>}
+                              {ty.todo > 0 && <span className="gp-chip is-todo">{ty.todo} yet to start</span>}
+                            </span>
+                          ))}
                         </span>
                       )}
                     </span>

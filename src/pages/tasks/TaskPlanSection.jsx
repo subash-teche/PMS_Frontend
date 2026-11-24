@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useBlocker, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarRange, Check, ChevronDown, ChevronRight, Cloud, Info, Pencil } from 'lucide-react';
+import { CalendarRange, Check, ChevronDown, ChevronRight, Cloud, Info } from 'lucide-react';
 import { tasksApi } from '@/api/endpoints';
 import { errorMessage } from '@/api/client';
 import { useAuth } from '@/auth/auth-context';
@@ -16,11 +16,10 @@ import { formatMinutes } from './TaskListPage';
 const period = (p) => `${formatDate(p.start)} – ${formatDate(p.end)}`;
 
 /**
- * "Add tasks from the plan": every task of each planned task group – the group's template tasks, with their task
- * type – with the dates of the group's weekly plan. A group planned in several separate periods starts with the
+ * "Add tasks from the plan": one task for each planned task group, with the dates of the group's weekly plan. A group planned in several separate periods starts with the
  * first one (the others are shown for information). Tasks the project already has are left out.
  */
-export function TaskPlanSection({ project, canAssign, users, onChangeMode }) {
+export function TaskPlanSection({ project, canAssign, users }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
@@ -122,10 +121,6 @@ export function TaskPlanSection({ project, canAssign, users, onChangeMode }) {
               Every task of each planned task group, with the group&apos;s dates from the weekly plan. A group planned in separate periods starts with the first one.
             </div>
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onChangeMode}>
-            <Pencil />
-            Change
-          </button>
         </div>
 
         {plan.isLoading ? (
@@ -185,7 +180,7 @@ export function TaskPlanSection({ project, canAssign, users, onChangeMode }) {
                     {shown && (
                       <ul className="tp-tasks">
                         {g.tasks.map((t) => (
-                          <li key={`${t.templateId}-${t.title}`} className={t.existing ? 'is-made' : undefined}>
+                          <li key={t.title} className={t.existing ? 'is-made' : undefined}>
                             <span className="tp-task-name">
                               {t.title}
                               {t.taskTypeName && <small>{t.taskTypeName}</small>}

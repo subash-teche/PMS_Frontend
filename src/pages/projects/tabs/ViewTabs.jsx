@@ -416,7 +416,7 @@ export function TasksView({ id }) {
         sub={
           tasks.length
             ? `${tasks.length} task${tasks.length === 1 ? '' : 's'} · ${tasks.length - done} open · ${done} completed${late ? ` · ${late} overdue` : ''} · by priority`
-            : 'Tasks of this project (from the task template, Task → New task or Add from template).'
+            : 'Tasks of this project (Task → New task or Add from plan).'
         }
       />
       {isLoading ? (
@@ -476,7 +476,7 @@ export function TasksView({ id }) {
         </div>
       ) : (
         <EmptyState icon={ListChecks} title="No tasks yet">
-          Add tasks from Task → New task or Add from template.
+          Add tasks from Task → New task or Add from plan.
         </EmptyState>
       )}
     </div>

@@ -155,7 +155,7 @@ export default function ProjectDetailsPage() {
       <ConfirmDeleteModal
         open={confirm}
         title="Delete project?"
-        message={`"${p.title}" and its template tasks will be removed. Projects with logged time cannot be deleted – set their stage to Cancelled instead.`}
+        message={`"${p.title}" and its tasks will be removed. Projects with logged time cannot be deleted – set their stage to Cancelled instead.`}
         busy={remove.isPending}
         onClose={() => setConfirm(false)}
         onConfirm={() => remove.mutate()}

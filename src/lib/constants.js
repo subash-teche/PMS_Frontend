@@ -11,7 +11,6 @@ export const SCREENS = Object.freeze({
   TASK_GROUPS: '/administration/task-groups',
   TASK_TYPES: '/administration/task-groups/types', // Task Types tab (permissions: TASK_GROUPS)
   PROJECT_TYPES: '/administration/project-divisions/types', // Project Types tab (permissions: PROJECT_DIVISIONS)
-  TASK_TEMPLATES: '/administration/project-divisions/templates', // Task Templates tab (permissions: PROJECT_DIVISIONS)
   PROJECT_DIVISIONS: '/administration/project-divisions',
   PROJECT_STAGES: '/administration/project-stages',
   CUSTOMERS: '/customers',

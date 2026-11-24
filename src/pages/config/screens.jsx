@@ -371,7 +371,7 @@ export const CONFIG_SCREENS = [
     search: 'Search project types or divisions…',
     form: 'projectType', // ProjectTypeFormPage (name, division, description)
     columns: [
-      { key: 'name', label: 'Project type', title: true, sub: (r) => `${r.taskCount} template task${r.taskCount === 1 ? '' : 's'}` },
+      { key: 'name', label: 'Project type', title: true },
       { key: 'divisionName', label: 'Division', render: (r) => (r.divisionName ? <span className="badge">{r.divisionName}</span> : '—') },
       { key: 'split', label: 'Task-type split', render: (r) => <SplitBar split={r.split} />, className: '' },
       { key: 'description', label: 'Description', render: (r) => <span className="muted">{r.description || '—'}</span> },
@@ -382,53 +382,7 @@ export const CONFIG_SCREENS = [
     card: (r) => ({
       title: r.name,
       sub: `${r.split.length} task groups`,
-      meta: [[ListChecks, plural(r.taskCount, 'template task')], [FolderKanban, plural(r.projectCount, 'project')]],
-      badge: <ActiveBadge active={r.isActive} />,
-    }),
-  },
-  {
-    key: 'task-templates',
-    // the Task Templates tab of Business Division: one row per project type, edits its template
-    screen: SCREENS.PROJECT_DIVISIONS,
-    path: SCREENS.TASK_TEMPLATES,
-    back: SCREENS.TASK_TEMPLATES,
-    apiKey: 'project-types',
-    keepState: true,
-    // "New task template" picks the project type (a template belongs to one) – see TaskTemplateFormPage
-    noDelete: true,
-    editLabel: 'Edit template',
-    title: 'Task Templates',
-    singular: 'task template',
-    icon: ListChecks,
-    search: 'Search project types or divisions…',
-    form: 'taskTemplate', // the template editor of a project type
-    columns: [
-      { key: 'name', label: 'Project type', title: true, sub: (r) => r.divisionName ?? undefined },
-      { key: 'taskCount', label: 'Template tasks', className: 'num right' },
-      {
-        key: 'templateGroups',
-        label: 'Task groups',
-        className: '',
-        render: (r) =>
-          r.templateGroups?.length ? (
-            <div className="tpl-role-chips" style={{ maxWidth: 460 }}>
-              {r.templateGroups.map((g) => (
-                <span key={g.name} className="chip">
-                  {g.name} <span className="muted">{g.count}</span>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="muted small">No template tasks</span>
-          ),
-      },
-      { key: 'isActive', label: 'Active', render: (r) => <ActiveBadge active={r.isActive} /> },
-    ],
-    filters: [{ key: 'divisionId', placeholder: 'Division', optionsFrom: { master: 'project-divisions' } }],
-    card: (r) => ({
-      title: r.name,
-      sub: r.divisionName ?? 'Project type',
-      meta: [[ListChecks, plural(r.taskCount, 'template task')], [Layers, plural(r.templateGroups?.length ?? 0, 'task group')]],
+      meta: [[FolderKanban, plural(r.projectCount, 'project')]],
       badge: <ActiveBadge active={r.isActive} />,
     }),
   },
